@@ -1,0 +1,18 @@
+[package]
+name = "grafeia_core"
+description = "γραφείο – core"
+version = "0.1.0"
+authors = ["Sebastian K <s3bk@protonmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+slab = "*"
+indexmap = "*"
+fst = "*"
+font = { git = "https://github.com/pdf-rs/font" }
+pathfinder_geometry = { git = "https://github.com/s3bk/pathfinder/" }
+pathfinder_content = { git = "https://github.com/s3bk/pathfinder/" }
+pathfinder_renderer = { git = "https://github.com/s3bk/pathfinder/" }
+pathfinder_export = { git = "https://github.com/s3bk/pathfinder/" }
