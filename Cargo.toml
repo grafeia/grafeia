@@ -3,3 +3,6 @@ members = [
     "core",
     "gui"
 ]
+
+[patch.crates-io]
+winit = { git = "https://github.com/rust-windowing/winit/" }

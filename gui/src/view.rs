@@ -11,21 +11,20 @@ use pathfinder_renderer::concurrent::scene_proxy::SceneProxy;
 use pathfinder_renderer::gpu::options::{DestFramebuffer, RendererOptions};
 use pathfinder_renderer::gpu::renderer::Renderer;
 use pathfinder_renderer::options::{BuildOptions, RenderTransform};
-use std::env;
 use glutin::{
-    event::{Event, WindowEvent, DeviceEvent, KeyboardInput, ElementState, VirtualKeyCode, MouseButton, MouseScrollDelta, ModifiersState, StartCause },
+    event::{Event, WindowEvent, DeviceEvent, KeyboardInput, ElementState, VirtualKeyCode, MouseButton, MouseScrollDelta, ModifiersState },
     event_loop::{ControlFlow, EventLoop},
     window::WindowBuilder,
     dpi::{LogicalSize, LogicalPosition, PhysicalSize, PhysicalPosition},
     GlRequest, Api
 };
 use gl;
-use std::time::Instant;
 use std::error::Error;
 
 pub trait Interactive: 'static {
     fn scene(&mut self) -> Scene;
     fn keyboard_input(&mut self, input: KeyboardInput) {}
+    fn mouse_input(&mut self, pos: Vector2F, state: ElementState) {}
 }
 
 pub fn show(mut item: impl Interactive) -> Result<(), Box<Error>> {
@@ -34,9 +33,9 @@ pub fn show(mut item: impl Interactive) -> Result<(), Box<Error>> {
 
     let scene = item.scene();
     let view_box = scene.view_box();
-    let mut view_center = view_box.origin() + view_box.size() * Vector2F::splat(0.5);
-    
-    let mut window_size = view_box.size() * Vector2F::splat(scale);
+    let mut view_center = view_box.origin() + view_box.size().scale(0.5);
+
+    let mut window_size = view_box.size().scale(scale);
     let window_builder = WindowBuilder::new()
         .with_title("A fantastic window!")
         .with_inner_size(LogicalSize::new(window_size.x() as f64, window_size.y() as f64));
@@ -56,7 +55,7 @@ pub fn show(mut item: impl Interactive) -> Result<(), Box<Error>> {
     let mut dpi = window.scale_factor() as f32;
 
     let proxy = SceneProxy::from_scene(scene, RayonExecutor);
-    let mut framebuffer_size = (window_size * Vector2F::splat(dpi)).to_i32();
+    let mut framebuffer_size = window_size.scale(dpi).to_i32();
     // Create a Pathfinder renderer.
     let mut renderer = Renderer::new(GLDevice::new(GLVersion::GL3, 0),
         &EmbeddedResourceLoader,
@@ -64,26 +63,19 @@ pub fn show(mut item: impl Interactive) -> Result<(), Box<Error>> {
         RendererOptions { background_color: Some(ColorF::new(0.9, 0.85, 0.8, 1.0)) }
     );
 
-    let mut needs_update = true;
-    let mut needs_redraw = true;
     let mut cursor_pos = Vector2F::default();
     let mut dragging = false;
+    let mut modifiers = ModifiersState::empty();
 
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;
-
-        dbg!(&event);
+        
         match event {
-            Event::NewEvents(StartCause::Init) => {
-                windowed_context.window().request_redraw();
-            }
             Event::RedrawRequested(_) => {
                 let scene = item.scene();
                 proxy.replace_scene(scene);
 
-                let t0 = Instant::now();
-
-                let physical_size = window_size * Vector2F::splat(dpi);
+                let physical_size = window_size.scale(dpi);
                 let new_framebuffer_size = physical_size.to_i32();
                 if new_framebuffer_size != framebuffer_size {
                     framebuffer_size = new_framebuffer_size;
@@ -91,28 +83,42 @@ pub fn show(mut item: impl Interactive) -> Result<(), Box<Error>> {
                     renderer.replace_dest_framebuffer(DestFramebuffer::full_window(framebuffer_size));
                 }
                 proxy.set_view_box(RectF::new(Vector2F::default(), physical_size));
+
+                let tr = Transform2F::from_translation(physical_size.scale(0.5)) *
+                    Transform2F::from_scale(Vector2F::splat(dpi * scale)) *
+                    Transform2F::from_translation(-view_center);
+                
                 let options = BuildOptions {
-                    transform: RenderTransform::Transform2D(
-                        Transform2F::from_translation(physical_size.scale(0.5)) *
-                        Transform2F::from_scale(Vector2F::splat(dpi * scale)) *
-                        Transform2F::from_translation(-view_center)
-                    ),
+                    transform: RenderTransform::Transform2D(tr),
                     dilation: Vector2F::default(),
                     subpixel_aa_enabled: false
                 };
+
                 proxy.build_and_render(&mut renderer, options);
                 windowed_context.swap_buffers().unwrap();
-
-                println!("render: {}ms", t0.elapsed().as_millis());
             },
+            Event::DeviceEvent { event, .. } => match event {
+                DeviceEvent::ModifiersChanged(new_modifiers) => {
+                    modifiers = new_modifiers;
+                },
+                _ => {}
+            }
             Event::WindowEvent { event, .. } =>  {
+                let mut needs_redraw = false;
+                let inverse_tr = |p: Vector2F| -> Vector2F {
+                    Transform2F::from_translation(view_center) *
+                    Transform2F::from_scale(Vector2F::splat(1.0 / (dpi * scale))) *
+                    Transform2F::from_translation(window_size.scale(-0.5 * dpi)) *
+                    p
+                };
+
                 match event {
                     WindowEvent::ScaleFactorChanged { scale_factor, new_inner_size } => {
                         dpi = scale_factor as f32;
                         needs_redraw = true;
                     }
                     WindowEvent::Resized(PhysicalSize {width, height}) => {
-                        window_size = Vector2F::new(width as f32, height as f32);
+                        window_size = Vector2F::new(width as f32, height as f32).scale(1.0 / dpi);
                         needs_redraw = true;
                     }
                     WindowEvent::KeyboardInput { input, ..  } => item.keyboard_input(input),
@@ -127,10 +133,11 @@ pub fn show(mut item: impl Interactive) -> Result<(), Box<Error>> {
                         }
                     },
                     WindowEvent::MouseInput { button: MouseButton::Left, state, .. } => {
-                        dragging = match state {
-                            ElementState::Pressed => true,
-                            ElementState::Released => false
-                        };
+                        match (state, modifiers.shift()) {
+                            (ElementState::Pressed, true) => dragging = true,
+                            (ElementState::Released, _) if dragging => dragging = false,
+                            _ => item.mouse_input(inverse_tr(cursor_pos), state),
+                        }
                     },
                     WindowEvent::MouseWheel { delta, modifiers, .. } => {
                         let delta = match delta {
@@ -151,8 +158,10 @@ pub fn show(mut item: impl Interactive) -> Result<(), Box<Error>> {
                     },
                     _ => {}
                 }
-                let window = windowed_context.window();
-                window.request_redraw();
+                if needs_redraw {
+                    let window = windowed_context.window();
+                    window.request_redraw();
+                }
             }
             _ => {}
         }

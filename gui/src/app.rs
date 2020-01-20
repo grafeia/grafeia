@@ -8,7 +8,10 @@ use grafeia_core::{
 };
 use font;
 use pathfinder_renderer::scene::Scene;
+use pathfinder_geometry::vector::Vector2F;
 use crate::view::Interactive;
+use winit::event::ElementState;
+
 
 pub struct App {
     cache: Cache,
@@ -126,5 +129,8 @@ impl Interactive for App {
     fn scene(&mut self) -> Scene {
         let mut scenes = self.cache.render(&self.storage, &self.target, &self.document, &self.design);
         scenes.swap_remove(0)
+    }
+    fn mouse_input(&mut self, pos: Vector2F, state: ElementState) {
+        dbg!(pos, state);
     }
 }

@@ -4,6 +4,7 @@ use crate::units::Length;
 use crate::Display;
 
 use font;
+use vector::{Vector, PathStyle, Surface, PathBuilder};
 use pathfinder_geometry::{
     vector::Vector2F,
     rect::RectF,
@@ -59,6 +60,15 @@ impl Cache {
             scene.set_bounds(target.media_box.into());
             scene.set_view_box(target.trim_box.into());
 
+            let style = scene.build_style(PathStyle {
+                fill: Some((255,255,255,255)),
+                stroke: Some(((0,0,0,255), 0.25))
+            });
+            let mut pb = PathBuilder::new();
+            pb.rect(target.trim_box.into());
+            
+            scene.draw_path(pb.into_outline(), &style);
+
             let paint = scene.push_paint(&Paint { color: ColorU { r: 0, g: 0, b: 0, a: 255 } });
             use crate::layout::Item as LayoutItem;
 
@@ -82,6 +92,7 @@ impl Cache {
                 }
                 line_indices.push((y, line_items));
             }
+
 
             scenes.push(scene);
         }
