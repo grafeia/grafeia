@@ -20,6 +20,23 @@ use glutin::{
 };
 use gl;
 use std::error::Error;
+use serde::{Serialize, Deserialize};
+use std::fs::File;
+
+#[derive(Serialize, Deserialize)]
+struct State {
+    scale: f32,
+    window_size: (f32, f32),
+    view_center: (f32, f32)
+}
+fn try_read() -> Option<State> {
+    let f = File::open(".view.json").ok()?;
+    serde_json::from_reader(f).ok()
+}
+fn try_write(s: State) -> Option<()> {
+    let f = File::create(".view.json").ok()?;
+    serde_json::to_writer(f, &s).ok()
+}
 
 pub trait Interactive: 'static {
     fn scene(&mut self) -> Scene;
@@ -36,6 +53,13 @@ pub fn show(mut item: impl Interactive) -> Result<(), Box<Error>> {
     let mut view_center = view_box.origin() + view_box.size().scale(0.5);
 
     let mut window_size = view_box.size().scale(scale);
+
+    if let Some(state) = try_read() {
+        scale = state.scale;
+        window_size = Vector2F::new(state.window_size.0, state.window_size.1);
+        view_center = Vector2F::new(state.view_center.0, state.view_center.1);
+    }
+
     let window_builder = WindowBuilder::new()
         .with_title("A fantastic window!")
         .with_inner_size(LogicalSize::new(window_size.x() as f64, window_size.y() as f64));
@@ -162,6 +186,14 @@ pub fn show(mut item: impl Interactive) -> Result<(), Box<Error>> {
                     let window = windowed_context.window();
                     window.request_redraw();
                 }
+            }
+            Event::LoopDestroyed => {
+                let state = State {
+                    scale,
+                    window_size: (window_size.x(), window_size.y()),
+                    view_center: (view_center.x(), view_center.y())
+                };
+                try_write(state);
             }
             _ => {}
         }

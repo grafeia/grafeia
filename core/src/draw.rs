@@ -1,8 +1,9 @@
-use crate::content::{Storage, Target, Item, Design, TypeDesign, Font, Word, Sequence};
+use crate::content::{Storage, Target, Item, Design, TypeDesign, Font, Word, Sequence, WordKey};
 use crate::layout::{Writer, Glue, Style, ColumnLayout, FlexMeasure};
 use crate::units::Length;
 use crate::Display;
-
+use crate::text::{grapheme_indices, build_gids};
+use std::collections::hash_map::{HashMap, Entry};
 use font;
 use vector::{Vector, PathStyle, Surface, PathBuilder};
 use pathfinder_geometry::{
@@ -18,13 +19,13 @@ use pathfinder_renderer::{
     scene::{Scene, PathObject},
     paint::{Paint, PaintId}
 };
+
 #[derive(Clone)]
-struct Context<'a> {
-    storage:    &'a Storage,
-    target:     &'a Target,
-    design:     &'a Design,
-    type_design:  &'a TypeDesign,
-    root:       &'a Item
+struct Context<'a, 'b> {
+    storage:    &'b Storage,
+    target:     &'b Target,
+    type_design: &'a TypeDesign,
+    root:       &'b Sequence
 }
 
 struct Layout {
@@ -32,27 +33,52 @@ struct Layout {
     glyphs: Vec<(font::GlyphId, Transform2F)>
 }
 
-pub struct Cache {
-
+pub struct Page {
+    scene: Scene,
+    tags: Vec<(f32, Vec<(f32, usize)>)>
 }
-impl Cache {
-    pub fn new() -> Cache {
-        Cache {}
+impl Page {
+    pub fn scene(&self) -> &Scene {
+        &self.scene
+    }
+    pub fn find(&self, p: Vector2F) -> Option<(usize, (f32, f32))> {
+        // find the first line with y value greater than p.y
+        for &(y, ref line) in self.tags.iter() {
+            if y > p.y() {
+                for &(x, tag) in line.iter().rev() {
+                    if x <= p.x() {
+                        return Some((tag, (x, y)));
+                    }
+                }
+            }
+        }
+        None
+    }
+}
+pub struct Cache<'a> {
+    design: &'a Design,
+    layout_cache: HashMap<(&'a Font, WordKey), Layout>
+}
+impl<'a> Cache<'a> {
+    pub fn new(design: &'a Design) -> Cache<'a> {
+        Cache {
+            design,
+            layout_cache: HashMap::new()
+        }
     }
 
-    pub fn render(&mut self, storage: &Storage, target: &Target, item: &Item, design: &Design) -> Vec<Scene> {
+    pub fn render(&mut self, storage: &Storage, target: &Target, root: &Sequence) -> Vec<Page> {
         let mut writer = Writer::new();
-        let type_design = design.default();
+        let type_design = self.design.default();
         let context = Context {
             storage,
             target,
-            design,
             type_design,
-            root: item
+            root
         };
-        self.render_item(&mut writer, &context, item, 0);
+        self.render_sequence(&mut writer, &context, root, 0);
 
-        let mut scenes = Vec::new();
+        let mut pages = Vec::new();
         let stream = writer.finish();
         let layout = ColumnLayout::new(&stream, target.content_box.width, target.content_box.height);
         for column in layout.columns() {
@@ -79,8 +105,7 @@ impl Cache {
                 for (x, item, &(font, idx)) in line {
                     match item {
                         LayoutItem::Word(key) => {
-                            let word = storage.get_word(key);
-                            let mut outline = self.render_word(word, storage, font);
+                            let mut outline = self.render_word(key, storage, font);
                             let word_offset = Vector2F::new(x.value as f32, y.value as f32);
                             let tr = Transform2F::from_translation(content_box.origin() + word_offset);
                             outline.transform(&tr);
@@ -88,83 +113,112 @@ impl Cache {
                         }
                         _ => {}
                     }
-                    line_items.push((x, idx));
+                    line_items.push((x.value + content_box.origin().x(), idx));
                 }
-                line_indices.push((y, line_items));
+                line_indices.push((y.value + content_box.origin().y(), line_items));
             }
 
 
-            scenes.push(scene);
+            pages.push(Page { scene, tags: line_indices });
         }
 
-        scenes
+        pages
     }
 
-    fn render_item<'a>(&mut self, writer: &mut Writer<(&'a Font, usize)>, ctx: &Context<'a>, item: &Item, mut idx: usize) {
+    fn render_sequence<'b>(&mut self, writer: &mut Writer<(&'a Font, usize)>, ctx: &Context<'a, 'b>, seq: &Sequence, mut idx: usize) {
+        let type_design = self.design.get_type(seq.typ()).unwrap_or(self.design.default());
+        let inner_context = Context {
+            type_design,
+            .. *ctx
+        };
+        match type_design.display {
+            Display::Block => writer.promote(Glue::newline()),
+            Display::Paragraph(indent) => writer.space(Glue::newline(), Glue::hfill(), FlexMeasure::fixed(indent), false),
+            _ => {}
+        }
+        for item in seq.items() {
+            self.render_item(writer, &inner_context, item, idx);
+            idx += item.num_nodes();
+        }
+        match type_design.display {
+            Display::Block => writer.promote(Glue::hfill()),
+            Display::Paragraph(_) => writer.promote(Glue::hfill()),
+            _ => {}
+        }
+    }
+    fn render_item<'b>(&mut self, writer: &mut Writer<(&'a Font, usize)>, ctx: &Context<'a, 'b>, item: &Item, idx: usize) {
         assert_eq!(ctx.root.find(idx).unwrap() as *const _, item as *const _);
 
         match *item {
             Item::Word(key) => {
-                let word = ctx.storage.get_word(key);
                 let font = &ctx.type_design.font;
                 let space = Glue::space(ctx.type_design.word_space);
-                let width = self.word_layout(word, &ctx.storage, font).advance.x();
+                let width = self.word_layout(key, &ctx.storage, font).advance.x();
                 let measure = FlexMeasure::fixed_box(Length::mm(width), ctx.type_design.line_height);
 
                 writer.word(space, space, key, measure, (font, idx));
             }
-            Item::Symbol(_) => {
-            }
-            Item::Sequence(ref seq) => {
-                let type_design = ctx.design.get_type(seq.typ()).unwrap_or(ctx.design.default());
-                let inner_context = Context {
-                    type_design,
-                    .. *ctx
-                };
-                match type_design.display {
-                    Display::Block => writer.promote(Glue::newline()),
-                    Display::Paragraph(indent) => writer.space(Glue::newline(), Glue::hfill(), FlexMeasure::fixed(indent), false),
-                    _ => {}
+            Item::Symbol(_) => {}
+            Item::Sequence(ref seq) => self.render_sequence(writer, ctx, seq, idx+1)
+        }
+    }
+    pub fn find(&self, storage: &Storage, design: &Design, seq: &Sequence, offset: f32, mut idx: usize) {
+        for item in seq.items() {
+            match *item {
+                Item::Word(key) => {
+                    if idx == 0 {
+                        let type_design = design.get_type(seq.typ()).unwrap_or(design.default());
+                        let word = storage.get_word(key);
+                        let face = storage.get_font_face(type_design.font.font_face);
+                        let grapheme_indices = grapheme_indices(face, &word.text);
+                        let layout = self.layout_cache.get(&(&type_design.font, key)).unwrap();
+                        for (&n, (gid, tr)) in grapheme_indices.iter().zip(layout.glyphs.iter()) {
+                            if tr.vector.x() < offset {
+                                println!("{}|{}", &word.text[0..n], &word.text[n..]);
+                                break;
+                            }
+                        }
+                        return;
+                    }
+                    idx -= 1;
                 }
-                idx += 1;
-                for item in seq.items() {
-                    self.render_item(writer, &inner_context, item, idx);
-                    idx += item.num_nodes();
+                Item::Symbol(_) => {
+                    if idx == 0 {
+                        return;
+                    }
+                    idx -= 1;
                 }
-                match type_design.display {
-                    Display::Block => writer.promote(Glue::hfill()),
-                    Display::Paragraph(_) => writer.promote(Glue::hfill()),
-                    _ => {}
+                Item::Sequence(ref seq) => {
+                    if idx == 0 || idx == seq.num_nodes() + 1 {
+                        // found. it is the sequence itself
+                        return;
+                    }
+                    idx -= 1;
+                    if idx < seq.num_nodes() {
+                        // within the sequence
+                        return self.find(storage, design, seq, offset, idx);
+                    }
+                    idx -= seq.num_nodes() + 1;
                 }
             }
         }
     }
-    fn word_layout(&mut self, word: &Word, storage: &Storage, font: &Font) -> Layout {
-        use font::{GlyphId};
+    fn word_layout(&mut self, word: WordKey, storage: &Storage, font: &'a Font) -> &Layout {
+        if let Some(layout) = self.layout_cache.get(&(font, word)) {
+            return layout;
+        }
+        let layout = self.build_word_layout(word, storage, font);
+        match self.layout_cache.entry((font, word)) {
+            Entry::Vacant(e) => e.insert(layout),
+            _ => unreachable!()
+        }
+    }
 
+    fn build_word_layout(&self, word: WordKey, storage: &Storage, font: &Font) -> Layout {
+        let word = storage.get_word(word);
         let face = storage.get_font_face(font.font_face);
         let mut last_gid = None;
-        let mut gids: Vec<GlyphId> = word.text.chars().map(|c| face.gid_for_unicode_codepoint(c as u32).unwrap_or(face.get_notdef_gid())).collect();
-        if let Some(gsub) = face.get_gsub() {
-            let mut substituted_gids = Vec::new();
-            let mut pos = 0;
-        'a: while let Some(&first) = gids.get(pos) {
-                pos += 1;
-                if let Some(subs) = gsub.substitutions(first) {
-                for (sub, glyph) in subs {
-                        if let Some(len) = sub.matches(&gids[pos ..]) {
-                            substituted_gids.push(glyph);
-                            pos += len;
-                            continue 'a;
-                        }
-                    }
-                }
-    
-                substituted_gids.push(first);
-            }
-    
-            gids = substituted_gids;
-        }
+        let gids = build_gids(face, &word.text);
 
         let transform = Transform2F::from_scale(Vector2F::splat(font.size.value))
          * Transform2F::from_scale(Vector2F::new(1.0, -1.0))
@@ -189,7 +243,7 @@ impl Cache {
         }
     }
 
-    fn render_word(&mut self, word: &Word, storage: &Storage, font: &Font) -> Outline {
+    fn render_word(&mut self, word: WordKey, storage: &Storage, font: &'a Font) -> Outline {
         let layout = self.word_layout(word, storage, font);
         let font = storage.get_font_face(font.font_face);
 

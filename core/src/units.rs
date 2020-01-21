@@ -1,14 +1,26 @@
 use std::ops::{Add, AddAssign, Sub, SubAssign, Mul, Div};
+use std::hash::{Hash, Hasher};
 use pathfinder_geometry::{
     rect::RectF,
     vector::Vector2F
 };
 
-#[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Default)]
+#[derive(Copy, Clone, Debug, PartialOrd, Default)]
 pub struct Length {
     // length in Millimeters
     pub value: f32,
 }
+impl Hash for Length {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        state.write_u32(self.value.to_bits());
+    }
+}
+impl PartialEq for Length {
+    fn eq(&self, other: &Length) -> bool {
+        self.value.to_bits() == other.value.to_bits()
+    }
+}
+impl Eq for Length {}
 impl Length {
     pub fn zero() -> Length {
         Length { value: 0.0 }

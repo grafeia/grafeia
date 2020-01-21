@@ -105,6 +105,6 @@ fn main() {
 
     for (page_nr, page) in pages.iter().enumerate() {
         let mut file = std::fs::File::create(&format!("page_{}.svg", page_nr)).unwrap();
-        page.export(&mut file, FileFormat::SVG).unwrap();
+        page.scene().export(&mut file, FileFormat::SVG).unwrap();
     }
 }

@@ -41,9 +41,8 @@ impl<'a> ContentBuilder<'a> {
             parent: self
         }
     }
-    pub fn finish(self) -> Item {
-        let seq = Sequence::new(self.document_key, self.items);
-        Item::Sequence(Box::new(seq))
+    pub fn finish(self) -> Sequence {
+        Sequence::new(self.document_key, self.items)
     }
 }
 

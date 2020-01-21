@@ -2,7 +2,7 @@ use grafeia_core::{
     content::*,
     units::*,
     builder::ContentBuilder,
-    draw::Cache,
+    draw::{Cache, Page},
     layout::FlexMeasure,
     Color, Display
 };
@@ -17,8 +17,9 @@ pub struct App {
     cache: Cache,
     storage: Storage,
     target: Target,
-    document: Item,
-    design: Design
+    document: Sequence,
+    design: Design,
+    pages: Vec<Page>
 }
 impl App {
     pub fn build() -> Self {
@@ -26,10 +27,16 @@ impl App {
         let document = ContentBuilder::new(&mut storage)
             .chapter().word("Test").finish()
             .paragraph()
-                .word("This")
-                .word("is")
-                .word("a")
-                .word("test")
+                .word("The")
+                .word("distilled")
+                .word("spirit")
+                .word("of")
+                .word("Garamond")
+                .finish()
+            .paragraph()
+                .word("The")
+                .word("ffine")
+                .word("fish")
                 .finish()
             .finish();
         
@@ -57,7 +64,7 @@ impl App {
         };
 
         let font_face = storage.insert_font_face(
-            font::parse(&std::fs::read("/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf").unwrap())
+            font::parse(&std::fs::read("/home/sebk/Rust/font/fonts/Cormorant/Cormorant-Regular.ttf").unwrap())
         );
 
         let default = TypeDesign {
@@ -120,17 +127,24 @@ impl App {
             storage,
             target,
             document,
-            design
+            design,
+            pages
         }
     }
 }
 
 impl Interactive for App {
     fn scene(&mut self) -> Scene {
-        let mut scenes = self.cache.render(&self.storage, &self.target, &self.document, &self.design);
-        scenes.swap_remove(0)
+        self.pages[0].scene().clone()
     }
     fn mouse_input(&mut self, pos: Vector2F, state: ElementState) {
         dbg!(pos, state);
+        if let Some((tag, (x, y))) = self.pages[0].find(pos) {
+            let item = self.document.find(tag);
+            println!("clicked on {:?}", item);
+            let offset = pos.x() - x;
+
+            self.cache.find(&self.storage, &self.design, &self.document, offset, tag);
+        }
     }
 }

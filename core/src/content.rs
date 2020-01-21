@@ -50,7 +50,7 @@ impl Borrow<str> for Symbol {
     }
 }
 
-#[derive(Hash, Eq, PartialEq)]
+#[derive(Hash, Eq, PartialEq, Debug)]
 pub struct Word {
     pub text: String
 }
@@ -86,20 +86,6 @@ impl Item {
             Item::Sequence(ref seq) => seq.num_nodes + 2
         }
     }
-    pub fn find(&self, idx: usize) -> Option<&Item> {
-        if idx == 0 {
-            return Some(self);
-        }
-        match *self {
-            Item::Sequence(ref seq) => {
-                if idx == seq.num_nodes + 1 {
-                    return Some(self);
-                }
-                seq.find(idx - 1)
-            },
-            _ => None
-        }
-    }
 }
 
 #[derive(Debug)]
@@ -122,6 +108,9 @@ impl Sequence {
     }
     pub fn typ(&self) -> TypeKey {
         self.typ
+    }
+    pub fn num_nodes(&self) -> usize {
+        self.num_nodes
     }
     pub fn find(&self, mut idx: usize) -> Option<&Item> {
         for item in self.items() {
@@ -235,7 +224,7 @@ pub struct TypeDesign {
 
 // this is a font. it contains all baked in settings
 // (font face, size, adjustments…)
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct Font {
     pub font_face: FontFaceKey,
     pub size: Length // height of 1em
