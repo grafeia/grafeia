@@ -224,7 +224,7 @@ pub struct TypeDesign {
 
 // this is a font. it contains all baked in settings
 // (font face, size, adjustments…)
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
 pub struct Font {
     pub font_face: FontFaceKey,
     pub size: Length // height of 1em

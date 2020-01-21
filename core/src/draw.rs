@@ -21,11 +21,12 @@ use pathfinder_renderer::{
 };
 
 #[derive(Clone)]
-struct Context<'a, 'b> {
-    storage:    &'b Storage,
-    target:     &'b Target,
+struct Context<'a> {
+    storage:    &'a Storage,
+    target:     &'a Target,
     type_design: &'a TypeDesign,
-    root:       &'b Sequence
+    root:       &'a Sequence,
+    design:     &'a Design,
 }
 
 struct Layout {
@@ -55,26 +56,25 @@ impl Page {
         None
     }
 }
-pub struct Cache<'a> {
-    design: &'a Design,
-    layout_cache: HashMap<(&'a Font, WordKey), Layout>
+pub struct Cache {
+    layout_cache: HashMap<(Font, WordKey), Layout>
 }
-impl<'a> Cache<'a> {
-    pub fn new(design: &'a Design) -> Cache<'a> {
+impl Cache {
+    pub fn new() -> Cache {
         Cache {
-            design,
             layout_cache: HashMap::new()
         }
     }
 
-    pub fn render(&mut self, storage: &Storage, target: &Target, root: &Sequence) -> Vec<Page> {
+    pub fn render(&mut self, storage: &Storage, target: &Target, root: &Sequence, design: &Design) -> Vec<Page> {
         let mut writer = Writer::new();
-        let type_design = self.design.default();
+        let type_design = design.default();
         let context = Context {
             storage,
             target,
             type_design,
-            root
+            root,
+            design
         };
         self.render_sequence(&mut writer, &context, root, 0);
 
@@ -105,7 +105,7 @@ impl<'a> Cache<'a> {
                 for (x, item, &(font, idx)) in line {
                     match item {
                         LayoutItem::Word(key) => {
-                            let mut outline = self.render_word(key, storage, font);
+                            let mut outline = self.render_word(key, storage, *font);
                             let word_offset = Vector2F::new(x.value as f32, y.value as f32);
                             let tr = Transform2F::from_translation(content_box.origin() + word_offset);
                             outline.transform(&tr);
@@ -125,8 +125,8 @@ impl<'a> Cache<'a> {
         pages
     }
 
-    fn render_sequence<'b>(&mut self, writer: &mut Writer<(&'a Font, usize)>, ctx: &Context<'a, 'b>, seq: &Sequence, mut idx: usize) {
-        let type_design = self.design.get_type(seq.typ()).unwrap_or(self.design.default());
+    fn render_sequence<'a>(&mut self, writer: &mut Writer<(&'a Font, usize)>, ctx: &Context<'a>, seq: &Sequence, mut idx: usize) {
+        let type_design = ctx.design.get_type(seq.typ()).unwrap_or(ctx.design.default());
         let inner_context = Context {
             type_design,
             .. *ctx
@@ -146,14 +146,14 @@ impl<'a> Cache<'a> {
             _ => {}
         }
     }
-    fn render_item<'b>(&mut self, writer: &mut Writer<(&'a Font, usize)>, ctx: &Context<'a, 'b>, item: &Item, idx: usize) {
+    fn render_item<'a>(&mut self, writer: &mut Writer<(&'a Font, usize)>, ctx: &Context<'a>, item: &Item, idx: usize) {
         assert_eq!(ctx.root.find(idx).unwrap() as *const _, item as *const _);
 
         match *item {
             Item::Word(key) => {
                 let font = &ctx.type_design.font;
                 let space = Glue::space(ctx.type_design.word_space);
-                let width = self.word_layout(key, &ctx.storage, font).advance.x();
+                let width = self.word_layout(key, &ctx.storage, *font).advance.x();
                 let measure = FlexMeasure::fixed_box(Length::mm(width), ctx.type_design.line_height);
 
                 writer.word(space, space, key, measure, (font, idx));
@@ -171,8 +171,8 @@ impl<'a> Cache<'a> {
                         let word = storage.get_word(key);
                         let face = storage.get_font_face(type_design.font.font_face);
                         let grapheme_indices = grapheme_indices(face, &word.text);
-                        let layout = self.layout_cache.get(&(&type_design.font, key)).unwrap();
-                        for (&n, (gid, tr)) in grapheme_indices.iter().zip(layout.glyphs.iter()) {
+                        let layout = self.layout_cache.get(&(type_design.font, key)).unwrap();
+                        for (&n, (gid, tr)) in grapheme_indices.iter().rev().zip(layout.glyphs.iter().rev()) {
                             if tr.vector.x() < offset {
                                 println!("{}|{}", &word.text[0..n], &word.text[n..]);
                                 break;
@@ -203,18 +203,12 @@ impl<'a> Cache<'a> {
             }
         }
     }
-    fn word_layout(&mut self, word: WordKey, storage: &Storage, font: &'a Font) -> &Layout {
-        if let Some(layout) = self.layout_cache.get(&(font, word)) {
-            return layout;
-        }
-        let layout = self.build_word_layout(word, storage, font);
-        match self.layout_cache.entry((font, word)) {
-            Entry::Vacant(e) => e.insert(layout),
-            _ => unreachable!()
-        }
+    fn word_layout(&mut self, word: WordKey, storage: &Storage, font: Font) -> &Layout {
+        self.layout_cache.entry((font, word))
+            .or_insert_with(|| Cache::build_word_layout(word, storage, font))
     }
 
-    fn build_word_layout(&self, word: WordKey, storage: &Storage, font: &Font) -> Layout {
+    fn build_word_layout(word: WordKey, storage: &Storage, font: Font) -> Layout {
         let word = storage.get_word(word);
         let face = storage.get_font_face(font.font_face);
         let mut last_gid = None;
@@ -243,7 +237,7 @@ impl<'a> Cache<'a> {
         }
     }
 
-    fn render_word(&mut self, word: WordKey, storage: &Storage, font: &'a Font) -> Outline {
+    fn render_word(&mut self, word: WordKey, storage: &Storage, font: Font) -> Outline {
         let layout = self.word_layout(word, storage, font);
         let font = storage.get_font_face(font.font_face);
 
