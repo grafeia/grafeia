@@ -1,5 +1,8 @@
 #![feature(generators, generator_trait, entry_insert)]
 
+#[macro_use] extern crate slotmap;
+use serde::{Serialize, Deserialize};
+
 pub mod content;
 pub mod layout;
 pub mod units;
@@ -9,9 +12,11 @@ pub mod draw;
 mod gen;
 mod text;
 
+#[derive(Serialize, Deserialize)]
 #[derive(Debug, Copy, Clone)]
 pub struct Color;
 
+#[derive(Serialize, Deserialize)]
 #[derive(Debug, Copy, Clone)]
 pub enum Display {
     Block,

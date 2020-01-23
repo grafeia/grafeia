@@ -15,6 +15,7 @@ pathfinder_gl = { git = "https://github.com/s3bk/pathfinder/" }
 pathfinder_gpu = { git = "https://github.com/s3bk/pathfinder/" }
 pathfinder_renderer = { git = "https://github.com/s3bk/pathfinder/" }
 
+vector = { git = "https://github.com/s3bk/vector/" }
 font = { git = "https://github.com/pdf-rs/font" }
 
 euclid = "0.19"
@@ -27,3 +28,5 @@ glutin = { git = "https://github.com/rust-windowing/glutin/" }
 winit = { git = "https://github.com/rust-windowing/winit/" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "*"
+unicode-segmentation = "1.6.0"
+bincode = "*"

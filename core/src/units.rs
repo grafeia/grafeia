@@ -4,7 +4,9 @@ use pathfinder_geometry::{
     rect::RectF,
     vector::Vector2F
 };
+use serde::{Serialize, Deserialize};
 
+#[derive(Serialize, Deserialize)]
 #[derive(Copy, Clone, Debug, PartialOrd, Default)]
 pub struct Length {
     // length in Millimeters
@@ -41,6 +43,8 @@ impl Length {
         Length { value: 25.4 * value }
     }
 }
+
+#[derive(Serialize, Deserialize)]
 pub struct Bounds {
     pub top: Length,
     pub bottom: Length,
@@ -56,6 +60,7 @@ impl Bounds {
     }
 }
 
+#[derive(Serialize, Deserialize)]
 #[derive(Copy, Clone)]
 pub struct Rect {
     pub left: Length,

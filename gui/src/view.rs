@@ -40,11 +40,21 @@ fn try_write(s: State) -> Option<()> {
 
 pub trait Interactive: 'static {
     fn scene(&mut self) -> Scene;
-    fn keyboard_input(&mut self, input: KeyboardInput) {}
-    fn mouse_input(&mut self, pos: Vector2F, state: ElementState) {}
+    fn char_input(&mut self, input: char) -> bool {
+        false
+    }
+    fn keyboard_input(&mut self, state: ElementState, keycode: VirtualKeyCode) -> bool {
+        false
+    }
+    fn mouse_input(&mut self, pos: Vector2F, state: ElementState) -> bool {
+        false
+    }
+    fn exit(&mut self) {}
+    fn title(&self) -> String { "A fantastic window!".into() }
 }
 
 pub fn show(mut item: impl Interactive) -> Result<(), Box<Error>> {
+    info!("creating event loop");
     let event_loop = EventLoop::new();
     let mut scale = 1.0;
 
@@ -61,9 +71,10 @@ pub fn show(mut item: impl Interactive) -> Result<(), Box<Error>> {
     }
 
     let window_builder = WindowBuilder::new()
-        .with_title("A fantastic window!")
+        .with_title(item.title())
         .with_inner_size(LogicalSize::new(window_size.x() as f64, window_size.y() as f64));
 
+    info!("creating window");
     let windowed_context = glutin::ContextBuilder::new()
         .with_gl(GlRequest::Specific(Api::OpenGl, (3, 0)))
         .build_windowed(window_builder, &event_loop)
@@ -78,6 +89,7 @@ pub fn show(mut item: impl Interactive) -> Result<(), Box<Error>> {
     let window = windowed_context.window();
     let mut dpi = window.scale_factor() as f32;
 
+    info!("setting up pathfinder");
     let proxy = SceneProxy::from_scene(scene, RayonExecutor);
     let mut framebuffer_size = window_size.scale(dpi).to_i32();
     // Create a Pathfinder renderer.
@@ -91,6 +103,7 @@ pub fn show(mut item: impl Interactive) -> Result<(), Box<Error>> {
     let mut dragging = false;
     let mut modifiers = ModifiersState::empty();
 
+    info!("entering the event loop");
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;
         
@@ -145,7 +158,9 @@ pub fn show(mut item: impl Interactive) -> Result<(), Box<Error>> {
                         window_size = Vector2F::new(width as f32, height as f32).scale(1.0 / dpi);
                         needs_redraw = true;
                     }
-                    WindowEvent::KeyboardInput { input, ..  } => item.keyboard_input(input),
+                    WindowEvent::KeyboardInput { input: KeyboardInput { state, virtual_keycode: Some(keycode), .. }, ..  }
+                        => needs_redraw |= item.keyboard_input(state, keycode),
+                    WindowEvent::ReceivedCharacter(c) => needs_redraw |= item.char_input(c),
                     WindowEvent::CursorMoved { position: PhysicalPosition { x, y }, .. } => {
                         let new_pos = Vector2F::new(x as f32, y as f32);
                         let cursor_delta = new_pos - cursor_pos;
@@ -160,7 +175,7 @@ pub fn show(mut item: impl Interactive) -> Result<(), Box<Error>> {
                         match (state, modifiers.shift()) {
                             (ElementState::Pressed, true) => dragging = true,
                             (ElementState::Released, _) if dragging => dragging = false,
-                            _ => item.mouse_input(inverse_tr(cursor_pos), state),
+                            _ => needs_redraw |= item.mouse_input(inverse_tr(cursor_pos), state)
                         }
                     },
                     WindowEvent::MouseWheel { delta, modifiers, .. } => {
@@ -194,6 +209,7 @@ pub fn show(mut item: impl Interactive) -> Result<(), Box<Error>> {
                     view_center: (view_center.x(), view_center.y())
                 };
                 try_write(state);
+                item.exit();
             }
             _ => {}
         }

@@ -18,13 +18,17 @@ Design
 - margins
 */
 
-use slab::Slab;
+use slotmap::SlotMap;
 use indexmap::{IndexMap, IndexSet};
 use std::collections::HashMap;
 use std::fmt::{self, Debug};
 use std::borrow::Borrow;
+use std::io;
+use std::path::Path;
+use std::ops::Deref;
 use font;
 use pathfinder_content::outline::Outline;
+use serde::{Serialize, Deserialize, Serializer};
 
 use crate::layout::FlexMeasure;
 use crate::{
@@ -34,12 +38,44 @@ use crate::{
 
 // possible design and information what it means
 // for example: plain text, a bullet list, a heading
+#[derive(Serialize, Deserialize)]
 pub struct Type {
     pub description: String,
 }
 
-pub type FontFace = Box<dyn font::Font<Outline>>;
+#[derive(Deserialize)]
+#[serde(from="Vec<u8>")]
+pub struct FontFace {
+    data: Vec<u8>,
+    face: Box<dyn font::Font<Outline>>
+}
+impl From<Vec<u8>> for FontFace {
+    fn from(data: Vec<u8>) -> Self {
+        let face = font::parse(&data);
+        FontFace { data, face }
+    }
+}
+impl FontFace {
+    pub fn from_path(path: impl AsRef<Path>) -> io::Result<Self> {
+        Ok(Self::from(std::fs::read(path)?))
+    }
+}
+impl Serialize for FontFace {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_bytes(&self.data)
+    }
+}
+impl Deref for FontFace {
+    type Target = dyn font::Font<Outline>;
+    fn deref(&self) -> &Self::Target {
+        &*self.face
+    }
+}
 
+#[derive(Serialize, Deserialize)]
 #[derive(Hash, Eq, PartialEq)]
 pub struct Symbol {
     pub text: String
@@ -50,6 +86,7 @@ impl Borrow<str> for Symbol {
     }
 }
 
+#[derive(Serialize, Deserialize)]
 #[derive(Hash, Eq, PartialEq, Debug)]
 pub struct Word {
     pub text: String
@@ -62,6 +99,7 @@ impl Borrow<str> for Word {
 
 macro_rules! key {
     ($ty:ident) => {
+        #[derive(Serialize, Deserialize)]
         #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
         pub struct $ty(usize);
     }
@@ -71,8 +109,12 @@ key!(WordKey);
 key!(StringKey);
 key!(SymbolKey);
 key!(TypeKey);
-key!(FontFaceKey);
+new_key_type! {
+    pub struct FontFaceKey;
+    pub struct TargetKey;
+}
 
+#[derive(Serialize, Deserialize)]
 #[derive(Debug)]
 pub enum Item {
     Word(WordKey),
@@ -88,9 +130,15 @@ impl Item {
     }
 }
 
+#[derive(Serialize, Deserialize)]
 #[derive(Debug)]
 pub struct Attribute;
 
+#[derive(Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Tag(pub(crate) usize);
+
+#[derive(Serialize, Deserialize)]
 #[derive(Debug)]
 pub struct Sequence {
     typ:   TypeKey,
@@ -112,21 +160,22 @@ impl Sequence {
     pub fn num_nodes(&self) -> usize {
         self.num_nodes
     }
-    pub fn find(&self, mut idx: usize) -> Option<&Item> {
-        for item in self.items() {
+    // parent and item
+    pub fn find(&self, Tag(mut idx): Tag) -> Option<(&Sequence, &Item)> {
+        for item in self.items.iter() {
             if idx == 0 {
-                return Some(item);
+                return Some((self, item));
             }
             idx -= 1;
             match item {
                 Item::Word(_) | Item::Symbol(_) => {}
                 Item::Sequence(ref seq) => {
                     if idx < seq.num_nodes {
-                        return seq.find(idx);
+                        return seq.find(Tag(idx));
                     }
                     idx -= seq.num_nodes;
                     if idx == 0 {
-                        return Some(item);
+                        return Some((self, item));
                     }
                     idx -= 1;
                 }
@@ -134,14 +183,43 @@ impl Sequence {
         }
         None
     }
+
+    pub fn replace(&mut self, Tag(mut idx): Tag, new_item: Item) {
+        use std::mem::replace;
+        for item in self.items.iter_mut() {
+            if idx == 0 {
+                replace(item, new_item);
+                break;
+            }
+            idx -= 1;
+            match item {
+                Item::Word(_) | Item::Symbol(_) => {}
+                Item::Sequence(ref mut seq) => {
+                    if idx < seq.num_nodes {
+                        seq.replace(Tag(idx), new_item);
+                        break;
+                    }
+                    idx -= seq.num_nodes;
+                    if idx == 0 {
+                        replace(item, new_item);
+                        break;
+                    }
+                    idx -= 1;
+                }
+            }
+        }
+
+        self.num_nodes = self.items.iter().map(|item| item.num_nodes()).sum();
+    }
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct Storage {
     words:   IndexSet<Word>,
     symbols: IndexSet<Symbol>,
     types:   IndexMap<String, Type>,
-    fonts:   Slab<FontFace>,
-    targets: Slab<Target>
+    fonts:   SlotMap<FontFaceKey, FontFace>,
+    targets: SlotMap<TargetKey, Target>
 }
 impl Storage {
     pub fn new() -> Storage {
@@ -149,8 +227,8 @@ impl Storage {
             words:   IndexSet::new(),
             symbols: IndexSet::new(),
             types:   IndexMap::new(),
-            fonts:   Slab::new(),
-            targets: Slab::new()
+            fonts:   SlotMap::with_key(),
+            targets: SlotMap::with_key()
         }
     }
     pub fn insert_word(&mut self, text: &str) -> WordKey {
@@ -172,8 +250,7 @@ impl Storage {
         TypeKey(idx)
     }
     pub fn insert_font_face(&mut self, font_face: FontFace) -> FontFaceKey {
-        let idx= self.fonts.insert(font_face);
-        FontFaceKey(idx)
+        self.fonts.insert(font_face)
     }
 
     pub fn get_word(&self, key: WordKey) -> &Word {
@@ -183,13 +260,14 @@ impl Storage {
         self.symbols.get_index(key.0).unwrap()
     }
     pub fn get_font_face(&self, key: FontFaceKey) -> &FontFace {
-        self.fonts.get(key.0).unwrap()
+        self.fonts.get(key).unwrap()
     }
     pub fn find_type(&self, name: &str) -> Option<TypeKey> {
         self.types.get_full(name).map(|(idx, _, _)| TypeKey(idx))
     }
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct Design {
     name: String,
     map: HashMap<TypeKey, TypeDesign>,
@@ -209,11 +287,15 @@ impl Design {
     pub fn get_type(&self, key: TypeKey) -> Option<&TypeDesign> {
         self.map.get(&key)
     }
+    pub fn get_type_or_default(&self, key: TypeKey) -> &TypeDesign {
+        self.map.get(&key).unwrap_or(&self.default)
+    }
     pub fn default(&self) -> &TypeDesign {
         &self.default
     }
 }
 
+#[derive(Serialize, Deserialize)]
 #[derive(Debug, Clone)]
 pub struct TypeDesign {
     pub display:        Display,
@@ -224,6 +306,7 @@ pub struct TypeDesign {
 
 // this is a font. it contains all baked in settings
 // (font face, size, adjustments…)
+#[derive(Serialize, Deserialize)]
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
 pub struct Font {
     pub font_face: FontFaceKey,
@@ -234,6 +317,7 @@ pub struct Font {
 /// Describes a physical print target.
 /// The author usually has only few choices here
 /// as the parameters are given by the printer
+#[derive(Serialize, Deserialize)]
 pub struct Target {
     // user visible string
     pub description: String,

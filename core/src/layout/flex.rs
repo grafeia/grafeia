@@ -1,7 +1,9 @@
 use crate::layout::Flex;
 use std::ops::*;
 use crate::units::*;
+use serde::{Serialize, Deserialize};
 
+#[derive(Serialize, Deserialize)]
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct FlexMeasure {
     pub shrink:     Length,
