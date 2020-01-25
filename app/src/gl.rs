@@ -40,7 +40,7 @@ impl GlWindow {
             .with_inner_size(LogicalSize::new(window_size.x() as f64, window_size.y() as f64));
 
         let windowed_context = glutin::ContextBuilder::new()
-            .with_gl(GlRequest::Specific(Api::OpenGl, (3, 0)))
+            .with_gl(GlRequest::Specific(Api::OpenGlEs, (3, 2)))
             .build_windowed(window_builder, &event_loop)
             .unwrap();
         
@@ -54,7 +54,7 @@ impl GlWindow {
         let proxy = SceneProxy::new(RayonExecutor);
         let mut framebuffer_size = window_size.scale(dpi).to_i32();
         // Create a Pathfinder renderer.
-        let mut renderer = Renderer::new(GLDevice::new(GLVersion::GL3, 0),
+        let mut renderer = Renderer::new(GLDevice::new(GLVersion::GLES3, 0),
             &EmbeddedResourceLoader,
             DestFramebuffer::full_window(framebuffer_size),
             RendererOptions { background_color: Some(ColorF::new(0.9, 0.85, 0.8, 1.0)) }

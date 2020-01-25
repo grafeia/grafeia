@@ -1225,7 +1225,7 @@ dependencies = [
 [[package]]
 name = "pathfinder_content"
 version = "0.1.0"
-source = "git+https://github.com/s3bk/pathfinder/#f76ef962c152be64d5faf24484a800a23f895fee"
+source = "git+https://github.com/s3bk/pathfinder/#8f70c5a5bbc7d7b8fe5698fc9776fbbf6ad73e6b"
 dependencies = [
  "arrayvec 0.4.12",
  "bitflags",
@@ -1238,7 +1238,7 @@ dependencies = [
 [[package]]
 name = "pathfinder_export"
 version = "0.1.0"
-source = "git+https://github.com/s3bk/pathfinder/#f76ef962c152be64d5faf24484a800a23f895fee"
+source = "git+https://github.com/s3bk/pathfinder/#8f70c5a5bbc7d7b8fe5698fc9776fbbf6ad73e6b"
 dependencies = [
  "deflate 0.8.2",
  "pathfinder_content",
@@ -1249,7 +1249,7 @@ dependencies = [
 [[package]]
 name = "pathfinder_geometry"
 version = "0.4.0"
-source = "git+https://github.com/s3bk/pathfinder/#f76ef962c152be64d5faf24484a800a23f895fee"
+source = "git+https://github.com/s3bk/pathfinder/#8f70c5a5bbc7d7b8fe5698fc9776fbbf6ad73e6b"
 dependencies = [
  "log 0.4.8",
  "pathfinder_simd",
@@ -1258,7 +1258,7 @@ dependencies = [
 [[package]]
 name = "pathfinder_gl"
 version = "0.1.0"
-source = "git+https://github.com/s3bk/pathfinder/#f76ef962c152be64d5faf24484a800a23f895fee"
+source = "git+https://github.com/s3bk/pathfinder/#8f70c5a5bbc7d7b8fe5698fc9776fbbf6ad73e6b"
 dependencies = [
  "gl",
  "half",
@@ -1271,7 +1271,7 @@ dependencies = [
 [[package]]
 name = "pathfinder_gpu"
 version = "0.1.0"
-source = "git+https://github.com/s3bk/pathfinder/#f76ef962c152be64d5faf24484a800a23f895fee"
+source = "git+https://github.com/s3bk/pathfinder/#8f70c5a5bbc7d7b8fe5698fc9776fbbf6ad73e6b"
 dependencies = [
  "half",
  "image",
@@ -1285,7 +1285,7 @@ dependencies = [
 [[package]]
 name = "pathfinder_renderer"
 version = "0.1.0"
-source = "git+https://github.com/s3bk/pathfinder/#f76ef962c152be64d5faf24484a800a23f895fee"
+source = "git+https://github.com/s3bk/pathfinder/#8f70c5a5bbc7d7b8fe5698fc9776fbbf6ad73e6b"
 dependencies = [
  "bitflags",
  "byteorder",
@@ -1305,7 +1305,7 @@ dependencies = [
 [[package]]
 name = "pathfinder_simd"
 version = "0.4.0"
-source = "git+https://github.com/s3bk/pathfinder/#f76ef962c152be64d5faf24484a800a23f895fee"
+source = "git+https://github.com/s3bk/pathfinder/#8f70c5a5bbc7d7b8fe5698fc9776fbbf6ad73e6b"
 dependencies = [
  "rustc_version",
 ]
@@ -1313,7 +1313,7 @@ dependencies = [
 [[package]]
 name = "pathfinder_ui"
 version = "0.1.0"
-source = "git+https://github.com/s3bk/pathfinder/#f76ef962c152be64d5faf24484a800a23f895fee"
+source = "git+https://github.com/s3bk/pathfinder/#8f70c5a5bbc7d7b8fe5698fc9776fbbf6ad73e6b"
 dependencies = [
  "hashbrown",
  "pathfinder_content",
@@ -1328,7 +1328,7 @@ dependencies = [
 [[package]]
 name = "pathfinder_webgl"
 version = "0.1.0"
-source = "git+https://github.com/s3bk/pathfinder/#f76ef962c152be64d5faf24484a800a23f895fee"
+source = "git+https://github.com/s3bk/pathfinder/#8f70c5a5bbc7d7b8fe5698fc9776fbbf6ad73e6b"
 dependencies = [
  "image",
  "log2",
