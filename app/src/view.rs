@@ -1,24 +1,16 @@
 
-use pathfinder_geometry::vector::{Vector2F};
-use pathfinder_geometry::rect::{RectF};
+use pathfinder_geometry::vector::{Vector2F, Vector2I};
 use pathfinder_geometry::transform2d::Transform2F;
-use pathfinder_content::color::ColorF;
-use pathfinder_gl::{GLDevice, GLVersion};
-use pathfinder_gpu::resources::{EmbeddedResourceLoader};
 use pathfinder_renderer::scene::Scene;
-use pathfinder_renderer::concurrent::rayon::RayonExecutor;
-use pathfinder_renderer::concurrent::scene_proxy::SceneProxy;
 use pathfinder_renderer::gpu::options::{DestFramebuffer, RendererOptions};
-use pathfinder_renderer::gpu::renderer::Renderer;
 use pathfinder_renderer::options::{BuildOptions, RenderTransform};
-use glutin::{
+use winit::{
     event::{Event, WindowEvent, DeviceEvent, KeyboardInput, ElementState, VirtualKeyCode, MouseButton, MouseScrollDelta, ModifiersState },
     event_loop::{ControlFlow, EventLoop},
     window::WindowBuilder,
     dpi::{LogicalSize, LogicalPosition, PhysicalSize, PhysicalPosition},
-    GlRequest, Api
 };
-use gl;
+
 use std::error::Error;
 use serde::{Serialize, Deserialize};
 use std::fs::File;
@@ -53,9 +45,11 @@ pub trait Interactive: 'static {
     fn title(&self) -> String { "A fantastic window!".into() }
 }
 
+
 pub fn show(mut item: impl Interactive) -> Result<(), Box<Error>> {
     info!("creating event loop");
     let event_loop = EventLoop::new();
+
     let mut scale = 1.0;
 
     let scene = item.scene();
@@ -70,35 +64,15 @@ pub fn show(mut item: impl Interactive) -> Result<(), Box<Error>> {
         view_center = Vector2F::new(state.view_center.0, state.view_center.1);
     }
 
-    let window_builder = WindowBuilder::new()
-        .with_title(item.title())
-        .with_inner_size(LogicalSize::new(window_size.x() as f64, window_size.y() as f64));
-
     info!("creating window");
-    let windowed_context = glutin::ContextBuilder::new()
-        .with_gl(GlRequest::Specific(Api::OpenGl, (3, 0)))
-        .build_windowed(window_builder, &event_loop)
-        .unwrap();
-    
-    let windowed_context = unsafe {
-        windowed_context.make_current().unwrap()
-    };
 
-    gl::load_with(|ptr| windowed_context.get_proc_address(ptr));
-    
-    let window = windowed_context.window();
-    let mut dpi = window.scale_factor() as f32;
+    #[cfg(target_arch="wasm32")]
+    let mut window = crate::webgl::WebGlWindow::new(&event_loop, "canvas");
 
-    info!("setting up pathfinder");
-    let proxy = SceneProxy::from_scene(scene, RayonExecutor);
-    let mut framebuffer_size = window_size.scale(dpi).to_i32();
-    // Create a Pathfinder renderer.
-    let mut renderer = Renderer::new(GLDevice::new(GLVersion::GL3, 0),
-        &EmbeddedResourceLoader,
-        DestFramebuffer::full_window(framebuffer_size),
-        RendererOptions { background_color: Some(ColorF::new(0.9, 0.85, 0.8, 1.0)) }
-    );
+    #[cfg(target_os="linux")]
+    let mut window = crate::gl::GlWindow::new(&event_loop, item.title(), window_size);
 
+    let mut dpi = window.scale_factor();
     let mut cursor_pos = Vector2F::default();
     let mut dragging = false;
     let mut modifiers = ModifiersState::empty();
@@ -109,18 +83,8 @@ pub fn show(mut item: impl Interactive) -> Result<(), Box<Error>> {
         
         match event {
             Event::RedrawRequested(_) => {
+                let physical_size = window.framebuffer_size().to_f32();
                 let scene = item.scene();
-                proxy.replace_scene(scene);
-
-                let physical_size = window_size.scale(dpi);
-                let new_framebuffer_size = physical_size.to_i32();
-                if new_framebuffer_size != framebuffer_size {
-                    framebuffer_size = new_framebuffer_size;
-                    windowed_context.resize(PhysicalSize::new(framebuffer_size.x() as u32, framebuffer_size.y() as u32));
-                    renderer.replace_dest_framebuffer(DestFramebuffer::full_window(framebuffer_size));
-                }
-                proxy.set_view_box(RectF::new(Vector2F::default(), physical_size));
-
                 let tr = Transform2F::from_translation(physical_size.scale(0.5)) *
                     Transform2F::from_scale(Vector2F::splat(dpi * scale)) *
                     Transform2F::from_translation(-view_center);
@@ -131,8 +95,7 @@ pub fn show(mut item: impl Interactive) -> Result<(), Box<Error>> {
                     subpixel_aa_enabled: false
                 };
 
-                proxy.build_and_render(&mut renderer, options);
-                windowed_context.swap_buffers().unwrap();
+                window.render(scene, options);
             },
             Event::DeviceEvent { event, .. } => match event {
                 DeviceEvent::ModifiersChanged(new_modifiers) => {
@@ -150,8 +113,9 @@ pub fn show(mut item: impl Interactive) -> Result<(), Box<Error>> {
                 };
 
                 match event {
-                    WindowEvent::ScaleFactorChanged { scale_factor, new_inner_size } => {
+                    WindowEvent::ScaleFactorChanged { scale_factor, new_inner_size: &mut PhysicalSize { width, height } } => {
                         dpi = scale_factor as f32;
+                        window.resize(Vector2F::new(width as _, height as _));
                         needs_redraw = true;
                     }
                     WindowEvent::Resized(PhysicalSize {width, height}) => {
@@ -198,7 +162,6 @@ pub fn show(mut item: impl Interactive) -> Result<(), Box<Error>> {
                     _ => {}
                 }
                 if needs_redraw {
-                    let window = windowed_context.window();
                     window.request_redraw();
                 }
             }

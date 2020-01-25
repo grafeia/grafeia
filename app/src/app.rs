@@ -77,7 +77,9 @@ impl App {
         };
 
         info!("reading font");
-        let font_face = storage.insert_font_face(FontFace::from_path("/home/sebk/Rust/font/fonts/Cormorant/Cormorant-Regular.ttf").unwrap());
+        let font_face = storage.insert_font_face(
+            Vec::from(&include_bytes!("../../data/Cormorant-Regular.ttf")[..]).into()
+        );
 
         info!("done reading font");
 

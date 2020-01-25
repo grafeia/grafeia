@@ -6,7 +6,7 @@ use serde::{Serialize, Deserialize};
 pub mod content;
 pub mod layout;
 pub mod units;
-pub mod hyphenation;
+//pub mod hyphenation;
 pub mod builder;
 pub mod draw;
 mod gen;

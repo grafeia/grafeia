@@ -1,7 +1,9 @@
 [workspace]
 members = [
     "core",
-    "gui"
+    "gui",
+    "app",
+    "web",
 ]
 
 [patch.crates-io]
