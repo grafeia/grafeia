@@ -119,7 +119,9 @@ pub fn show(mut item: impl Interactive) -> Result<(), Box<Error>> {
                         needs_redraw = true;
                     }
                     WindowEvent::Resized(PhysicalSize {width, height}) => {
-                        window_size = Vector2F::new(width as f32, height as f32).scale(1.0 / dpi);
+                        let physical_size = Vector2F::new(width as f32, height as f32);
+                        window.resize(physical_size);
+                        window_size = physical_size.scale(1.0 / dpi);
                         needs_redraw = true;
                     }
                     WindowEvent::KeyboardInput { input: KeyboardInput { state, virtual_keycode: Some(keycode), .. }, ..  }
