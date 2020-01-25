@@ -12,3 +12,4 @@ grafeia_app = { path = "../app" }
 wasm-bindgen = "*"
 web-sys = { version = "*", features=["console"]}
 log = "*"
+console_log = "*"
