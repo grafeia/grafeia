@@ -13,3 +13,4 @@ wasm-bindgen = "*"
 web-sys = { version = "*", features=["console"]}
 log = "*"
 console_log = "*"
+log2 = { git = "https://github.com/s3bk/log2" }
