@@ -1,5 +1,5 @@
-#![feature(panic_info_message)]
-#[macro_use] extern crate log2;
+#[macro_use] extern crate log;
+extern crate console_error_panic_hook;
 
 use grafeia_app::{
     app::App,
@@ -18,17 +18,7 @@ fn error(s: &str) {
 
 #[wasm_bindgen(start)]
 pub fn run() {
-    use std::panic::PanicInfo;
-    std::panic::set_hook(Box::new(|info: &PanicInfo| {
-        if let Some(args) = info.message() {
-            error(&format!("panic: {}", args));
-        }
-        else if let Some(s) = info.payload().downcast_ref::<&str>() {
-            error(s);
-        } else {
-            error("panic!");
-        }
-    }) as _);
+    std::panic::set_hook(Box::new(console_error_panic_hook::hook));
 
     log(&format!("logger: {:p}", log::logger() as *const Log));
     console_log::init_with_level(Level::Trace).unwrap();

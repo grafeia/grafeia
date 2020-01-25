@@ -14,3 +14,4 @@ web-sys = { version = "*", features=["console"]}
 log = "*"
 console_log = "*"
 log2 = { git = "https://github.com/s3bk/log2" }
+console_error_panic_hook = "*"
