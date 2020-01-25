@@ -1,0 +1,15 @@
+[package]
+name = "web"
+version = "0.1.0"
+authors = ["Sebastian K <s3bk@protonmail.com>"]
+edition = "2018"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+grafeia_app = { path = "../app" }
+wasm-bindgen = "*"
+web-sys = { version = "*", features=["console"]}
+log = "*"
+console_log = { path = "../../console_log" }
