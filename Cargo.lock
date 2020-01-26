@@ -213,16 +213,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "console_error_panic_hook"
-version = "0.1.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b8d976903543e0c48546a91908f21588a680a8c8f984df9a5d69feccb2b2a211"
-dependencies = [
- "cfg-if",
- "wasm-bindgen",
-]
-
-[[package]]
 name = "console_log"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -395,19 +385,6 @@ dependencies = [
 
 [[package]]
 name = "env_logger"
-version = "0.6.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aafcde04e90a5226a6443b7aabdb016ba2f8307c847d524724bd9b346dd1a2d3"
-dependencies = [
- "atty",
- "humantime",
- "log 0.4.8",
- "regex",
- "termcolor",
-]
-
-[[package]]
-name = "env_logger"
 version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "44533bbbb3bb3c1fa17d9f2e4e38bbbaf8396ba82193c4cb1b6445d711445d36"
@@ -452,12 +429,11 @@ dependencies = [
 [[package]]
 name = "font"
 version = "0.1.0"
-source = "git+https://github.com/pdf-rs/font#8a07533eee45f846a9d234dfd4ff3d82b31fd90d"
+source = "git+https://github.com/pdf-rs/font#9e09602a0e47c37c82513e93f36edf50e0f0ce00"
 dependencies = [
  "brotli-decompressor",
  "decorum",
  "encoding",
- "env_logger 0.6.2",
  "indexmap",
  "inflate",
  "itertools",
@@ -693,7 +669,7 @@ dependencies = [
 name = "grafeia_gui"
 version = "0.1.0"
 dependencies = [
- "env_logger 0.7.1",
+ "env_logger",
  "grafeia_app",
 ]
 
@@ -1225,7 +1201,7 @@ dependencies = [
 [[package]]
 name = "pathfinder_content"
 version = "0.1.0"
-source = "git+https://github.com/s3bk/pathfinder/#8f70c5a5bbc7d7b8fe5698fc9776fbbf6ad73e6b"
+source = "git+https://github.com/s3bk/pathfinder/#fafa627b0eeddcb8f8df972114e493beea4230e4"
 dependencies = [
  "arrayvec 0.4.12",
  "bitflags",
@@ -1238,7 +1214,7 @@ dependencies = [
 [[package]]
 name = "pathfinder_export"
 version = "0.1.0"
-source = "git+https://github.com/s3bk/pathfinder/#8f70c5a5bbc7d7b8fe5698fc9776fbbf6ad73e6b"
+source = "git+https://github.com/s3bk/pathfinder/#fafa627b0eeddcb8f8df972114e493beea4230e4"
 dependencies = [
  "deflate 0.8.2",
  "pathfinder_content",
@@ -1249,7 +1225,7 @@ dependencies = [
 [[package]]
 name = "pathfinder_geometry"
 version = "0.4.0"
-source = "git+https://github.com/s3bk/pathfinder/#8f70c5a5bbc7d7b8fe5698fc9776fbbf6ad73e6b"
+source = "git+https://github.com/s3bk/pathfinder/#fafa627b0eeddcb8f8df972114e493beea4230e4"
 dependencies = [
  "log 0.4.8",
  "pathfinder_simd",
@@ -1258,7 +1234,7 @@ dependencies = [
 [[package]]
 name = "pathfinder_gl"
 version = "0.1.0"
-source = "git+https://github.com/s3bk/pathfinder/#8f70c5a5bbc7d7b8fe5698fc9776fbbf6ad73e6b"
+source = "git+https://github.com/s3bk/pathfinder/#fafa627b0eeddcb8f8df972114e493beea4230e4"
 dependencies = [
  "gl",
  "half",
@@ -1271,7 +1247,7 @@ dependencies = [
 [[package]]
 name = "pathfinder_gpu"
 version = "0.1.0"
-source = "git+https://github.com/s3bk/pathfinder/#8f70c5a5bbc7d7b8fe5698fc9776fbbf6ad73e6b"
+source = "git+https://github.com/s3bk/pathfinder/#fafa627b0eeddcb8f8df972114e493beea4230e4"
 dependencies = [
  "half",
  "image",
@@ -1285,7 +1261,7 @@ dependencies = [
 [[package]]
 name = "pathfinder_renderer"
 version = "0.1.0"
-source = "git+https://github.com/s3bk/pathfinder/#8f70c5a5bbc7d7b8fe5698fc9776fbbf6ad73e6b"
+source = "git+https://github.com/s3bk/pathfinder/#fafa627b0eeddcb8f8df972114e493beea4230e4"
 dependencies = [
  "bitflags",
  "byteorder",
@@ -1305,7 +1281,7 @@ dependencies = [
 [[package]]
 name = "pathfinder_simd"
 version = "0.4.0"
-source = "git+https://github.com/s3bk/pathfinder/#8f70c5a5bbc7d7b8fe5698fc9776fbbf6ad73e6b"
+source = "git+https://github.com/s3bk/pathfinder/#fafa627b0eeddcb8f8df972114e493beea4230e4"
 dependencies = [
  "rustc_version",
 ]
@@ -1313,7 +1289,7 @@ dependencies = [
 [[package]]
 name = "pathfinder_ui"
 version = "0.1.0"
-source = "git+https://github.com/s3bk/pathfinder/#8f70c5a5bbc7d7b8fe5698fc9776fbbf6ad73e6b"
+source = "git+https://github.com/s3bk/pathfinder/#fafa627b0eeddcb8f8df972114e493beea4230e4"
 dependencies = [
  "hashbrown",
  "pathfinder_content",
@@ -1328,7 +1304,7 @@ dependencies = [
 [[package]]
 name = "pathfinder_webgl"
 version = "0.1.0"
-source = "git+https://github.com/s3bk/pathfinder/#8f70c5a5bbc7d7b8fe5698fc9776fbbf6ad73e6b"
+source = "git+https://github.com/s3bk/pathfinder/#fafa627b0eeddcb8f8df972114e493beea4230e4"
 dependencies = [
  "image",
  "log2",
@@ -2112,7 +2088,7 @@ checksum = "93b02247366f395b9258054f964fe293ddd019c3237afba9be2ccbe9e1651c3d"
 dependencies = [
  "proc-macro2 0.4.30",
  "quote 0.6.13",
- "xml-rs 0.8.0",
+ "xml-rs 0.7.0",
 ]
 
 [[package]]
@@ -2129,11 +2105,9 @@ dependencies = [
 name = "web"
 version = "0.1.0"
 dependencies = [
- "console_error_panic_hook",
  "console_log",
  "grafeia_app",
  "log 0.4.8",
- "log2",
  "wasm-bindgen",
  "web-sys",
 ]
@@ -2206,7 +2180,7 @@ checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
 [[package]]
 name = "winit"
 version = "0.20.0"
-source = "git+https://github.com/rust-windowing/winit/#8856b6ecb7f9633a47ae51d8b8fd8dd0899ad4d9"
+source = "git+https://github.com/s3bk/winit/#30489b6b0cb87bdb72339bce36db03b4d95304ea"
 dependencies = [
  "android_glue",
  "bitflags",
@@ -2245,9 +2219,9 @@ dependencies = [
 
 [[package]]
 name = "x11-dl"
-version = "2.18.4"
+version = "2.18.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "be65e1342a3baae65439cd03306778831a3d133b0d20243a7fb83fd5cf403c58"
+checksum = "2bf981e3a5b3301209754218f962052d4d9ee97e478f4d26d4a6eced34c1fef8"
 dependencies = [
  "lazy_static",
  "libc",

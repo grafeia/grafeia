@@ -1,11 +1,12 @@
 #[macro_use] extern crate log;
-extern crate console_error_panic_hook;
+//extern crate console_error_panic_hook;
 
 use grafeia_app::{
     app::App,
     view,
     view::Interactive
 };
+
 use wasm_bindgen::prelude::*;
 use log::{Log, Level};
 
@@ -18,11 +19,9 @@ fn error(s: &str) {
 
 #[wasm_bindgen(start)]
 pub fn run() {
-    std::panic::set_hook(Box::new(console_error_panic_hook::hook));
+    //std::panic::set_hook(Box::new(console_error_panic_hook::hook));
 
-    log(&format!("logger: {:p}", log::logger() as *const Log));
     console_log::init_with_level(Level::Trace).unwrap();
-    log(&format!("logger: {:p}", log::logger() as *const Log));
 
     info!("test");
 
