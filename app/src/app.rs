@@ -171,6 +171,89 @@ impl App {
                 type_key
             });
     }
+    fn text_op(&mut self, op: TextOp) -> bool {
+        let cursor = match self.cursor {
+            Some(cursor) => cursor,
+            _ => return false
+        };
+
+        match self.document.find(cursor.tag) {
+            Some((_, &Item::Word(word_key))) => {
+                let text = &self.storage.get_word(word_key).text;
+                let n = cursor.text_pos;
+
+                let (new_text, text_pos): (String, usize) = match op {
+                    TextOp::DeleteLeft if n > 0 => {
+                        let new_pos = text[.. n].grapheme_indices(true).rev().next()
+                            .map(|(n, _)| n).unwrap_or(0);
+                        let new_text = format!("{}{}", &text[.. new_pos], &text[n ..]);
+                        (new_text, new_pos)
+                    }
+                    TextOp::DeleteRight if n < text.len() => {
+                        let new_pos = text[n ..].grapheme_indices(true).nth(1)
+                            .map(|(m, _)| n + m).unwrap_or(text.len());
+                        let new_text = format!("{}{}", &text[.. n], &text[new_pos ..]);
+                        (new_text, new_pos)
+                    }
+                    TextOp::Insert(c) => {
+                        let new_text = format!("{}{}{}", &text[.. cursor.text_pos], c, &text[cursor.text_pos ..]);
+                        (new_text, cursor.text_pos + c.len_utf8())
+                    }
+                    _ => return false
+                };
+
+                let new_item = Item::Word(self.storage.insert_word(&new_text));
+                self.document.replace(cursor.tag, new_item);
+
+                self.render();
+
+                self.cursor = self.cache.get_position_on_page(&self.storage, &self.design, &self.document, &self.pages[0], cursor.tag, text_pos)
+                    .map(|(page_pos, type_key)| Cursor {
+                        tag: cursor.tag,
+                        text_pos,
+                        page_pos,
+                        type_key
+                    });
+                true
+            }
+            _ => false
+        }
+    }
+    fn cursor_op(&mut self, op: CursorOp) -> bool {
+        let cursor = match self.cursor {
+            Some(cursor) => cursor,
+            _ => return false
+        };
+
+        match self.document.find(cursor.tag) {
+            Some((_, &Item::Word(word_key))) => {
+                let text = &self.storage.get_word(word_key).text;
+                let pos = match op {
+                    CursorOp::GraphemeRight => {
+                        text[cursor.text_pos ..].grapheme_indices(true).nth(1)
+                            .map(|(n, _)| cursor.text_pos+n).unwrap_or(text.len())
+                    }
+                    CursorOp::GraphemeLeft => {
+                        text[.. cursor.text_pos].grapheme_indices(true).rev().next()
+                            .map(|(n, _)| n).unwrap_or(0)
+                    }
+                };
+                self.set_cursor_to(cursor.tag, pos);
+                return true;
+            }
+            _ => false
+        }
+    }
+}
+
+enum TextOp {
+    Insert(char),
+    DeleteLeft,
+    DeleteRight
+}
+enum CursorOp {
+    GraphemeLeft,
+    GraphemeRight,
 }
 
 #[derive(PartialEq, Copy, Clone)]
@@ -227,82 +310,21 @@ impl Interactive for App {
     fn keyboard_input(&mut self, state: ElementState, keycode: VirtualKeyCode) -> bool {
         info!("keyboard input keycode = {:?}, state = {:?}", keycode, state);
         match (state, keycode) {
-            (ElementState::Pressed, VirtualKeyCode::Right) => {
-                if let Some(cursor) = self.cursor {
-                    match self.document.find(cursor.tag) {
-                        Some((_, &Item::Word(word_key))) => {
-                            let text = &self.storage.get_word(word_key).text;
-                            let pos = match text[cursor.text_pos ..].grapheme_indices(true).nth(1) {
-                                Some((offset, _)) => cursor.text_pos + offset,
-                                None => text.len()
-                            };
-                            self.set_cursor_to(cursor.tag, pos);
-                            return true;
-                        }
-                        _ => {}
-                    }
-                }
-            },
-            (ElementState::Pressed, VirtualKeyCode::Left) => {
-                if let Some(cursor) = self.cursor {
-                    match self.document.find(cursor.tag) {
-                        Some((_, &Item::Word(word_key))) => {
-                            let text = &self.storage.get_word(word_key).text;
-                            if let Some((pos, _)) = text[.. cursor.text_pos].grapheme_indices(true).rev().next() {
-                                self.set_cursor_to(cursor.tag, pos);
-                                return true;
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-            },
-            _ => {}
+            (ElementState::Pressed, VirtualKeyCode::Right) => self.cursor_op(CursorOp::GraphemeRight),
+            (ElementState::Pressed, VirtualKeyCode::Left) => self.cursor_op(CursorOp::GraphemeLeft),
+            (ElementState::Pressed, VirtualKeyCode::Back) => self.text_op(TextOp::DeleteLeft),
+            (ElementState::Pressed, VirtualKeyCode::Delete) => self.text_op(TextOp::DeleteRight),
+            _ => false
         }
-        false
     }
 
     fn char_input(&mut self, c: char) -> bool {
-        if let Some(cursor) = self.cursor.take() {
-            match self.document.find(cursor.tag) {
-                Some((_, &Item::Word(word_key))) => {
-                    dbg!(&self.document);
-                    let old_text = &self.storage.get_word(word_key).text;
-
-                    let (new_text, text_pos) = match c {
-                        // backspace
-                        '\u{8}' if cursor.text_pos > 0 => {
-                            let new_pos = old_text[.. cursor.text_pos].grapheme_indices(true).rev().next().unwrap().0;
-                            let new_text = format!("{}{}", &old_text[.. new_pos], &old_text[cursor.text_pos ..]);
-                            (new_text, new_pos)
-                        },
-                        '\u{8}' => return false,
-                        ' ' => return false,
-                        _ => {
-                            let new_text = format!("{}{}{}", &old_text[.. cursor.text_pos], c, &old_text[cursor.text_pos ..]);
-                            (new_text, cursor.text_pos + c.len_utf8())
-                        }
-                    };
-                    
-                    let new_item = Item::Word(self.storage.insert_word(&new_text));
-                    self.document.replace(cursor.tag, new_item);
-
-                    self.render();
-
-                    self.cursor = self.cache.get_position_on_page(&self.storage, &self.design, &self.document, &self.pages[0], cursor.tag, text_pos)
-                        .map(|(page_pos, type_key)| Cursor {
-                            tag: cursor.tag,
-                            text_pos,
-                            page_pos,
-                            type_key
-                        });
-
-                    return true;
-                },
-                _ => {}
-            }
+        match c {
+            // backspace
+            '\u{8}' => return false,
+            ' ' => return false,
+            _ => self.text_op(TextOp::Insert(c))
         }
-        false
     }
     fn exit(&mut self) {
         self.store()

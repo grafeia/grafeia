@@ -18,7 +18,11 @@ use std::fs::File;
 #[derive(Serialize, Deserialize)]
 struct State {
     scale: f32,
+
+    #[cfg(feature="pan")]
     window_size: (f32, f32),
+
+    #[cfg(feature="pan")]
     view_center: (f32, f32)
 }
 fn try_read() -> Option<State> {
@@ -58,27 +62,36 @@ pub fn show(mut item: impl Interactive) {
 
     let scene = item.scene();
     let view_box = scene.view_box();
+    
+    #[cfg(feature="pan")]
     let mut view_center = view_box.origin() + view_box.size().scale(0.5);
 
     let mut window_size = view_box.size().scale(scale);
 
     if let Some(state) = try_read() {
         scale = state.scale;
-        window_size = Vector2F::new(state.window_size.0, state.window_size.1);
-        view_center = Vector2F::new(state.view_center.0, state.view_center.1);
+
+        #[cfg(feature="pan")]
+        {
+            window_size = Vector2F::new(state.window_size.0, state.window_size.1);
+            view_center = Vector2F::new(state.view_center.0, state.view_center.1);
+        }
     }
 
     info!("creating window");
 
     #[cfg(target_arch="wasm32")]
-    let mut window = crate::webgl::WebGlWindow::new(&event_loop, "canvas");
+    let mut window = crate::webgl::WebGlWindow::new(&event_loop, "canvas", window_size);
 
     #[cfg(target_os="linux")]
     let mut window = crate::gl::GlWindow::new(&event_loop, item.title(), window_size);
 
     let mut dpi = window.scale_factor();
     let mut cursor_pos = Vector2F::default();
+
+    #[cfg(feature="pan")]
     let mut dragging = false;
+
     let mut modifiers = ModifiersState::empty();
 
     info!("entering the event loop");
@@ -90,10 +103,15 @@ pub fn show(mut item: impl Interactive) {
                 let physical_size = window.framebuffer_size().to_f32();
                 debug!("physical_size = {:?}", physical_size);
                 let scene = item.scene();
+
+                #[cfg(feature="pan")]
                 let tr = Transform2F::from_translation(physical_size.scale(0.5)) *
                     Transform2F::from_scale(Vector2F::splat(dpi * scale)) *
                     Transform2F::from_translation(-view_center);
                 
+                #[cfg(not(feature="pan"))]
+                let tr = Transform2F::from_scale(Vector2F::splat(dpi * scale));
+
                 let options = BuildOptions {
                     transform: RenderTransform::Transform2D(tr),
                     dilation: Vector2F::default(),
@@ -117,6 +135,7 @@ pub fn show(mut item: impl Interactive) {
                 let mut needs_redraw = false;
 
                 match event {
+                    #[cfg(feature="pan")]
                     WindowEvent::ScaleFactorChanged { scale_factor, new_inner_size: PhysicalSize { width, height } } => {
                         dpi = scale_factor as f32;
                         let physical_size = Vector2F::new(width as f32, height as f32);
@@ -124,6 +143,15 @@ pub fn show(mut item: impl Interactive) {
                         window_size = physical_size.scale(1.0 / dpi);
                         needs_redraw = true;
                     }
+                    #[cfg(not(feature="pan"))]
+                    WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
+                        dpi = scale_factor as f32;
+                        window_size = view_box.size().scale(scale);
+                        window.resize(window_size.scale(dpi));
+                        needs_redraw = true;
+                    }
+
+                    #[cfg(feature="pan")]
                     WindowEvent::Resized(PhysicalSize {width, height}) => {
                         let physical_size = Vector2F::new(width as f32, height as f32);
                         window.resize(physical_size);
@@ -139,15 +167,19 @@ pub fn show(mut item: impl Interactive) {
                         let cursor_delta = new_pos - cursor_pos;
                         cursor_pos = new_pos;
 
+                        #[cfg(feature="pan")] {
                         if dragging {
-                            view_center = view_center - cursor_delta.scale(1.0 / (scale * dpi));
-                            needs_redraw = true;
-                        }
+                                view_center = view_center - cursor_delta.scale(1.0 / (scale * dpi));
+                                needs_redraw = true;
+                        } }
                     },
+
+                    #[cfg(feature="pan")]
                     WindowEvent::MouseInput { button: MouseButton::Left, state, .. } => {
                         match (state, modifiers.shift()) {
                             (ElementState::Pressed, true) => dragging = true,
                             (ElementState::Released, _) if dragging => dragging = false,
+
                             _ => {
                                 let scene_pos = 
                                 Transform2F::from_translation(view_center) *
@@ -157,7 +189,14 @@ pub fn show(mut item: impl Interactive) {
                                 needs_redraw |= item.mouse_input(scene_pos, state);
                             }
                         }
-                    },
+                    }
+                    #[cfg(not(feature="pan"))]
+                    WindowEvent::MouseInput { button: MouseButton::Left, state, .. } => {
+                        let scene_pos = cursor_pos.scale(1.0 / (dpi * scale));
+                        needs_redraw |= item.mouse_input(scene_pos, state);
+                    }
+
+                    #[cfg(feature="pan")]
                     WindowEvent::MouseWheel { delta, modifiers, .. } => {
                         let delta = match delta {
                             MouseScrollDelta::PixelDelta(LogicalPosition { x: dx, y: dy }) => Vector2F::new(dx as f32, dy as f32),
@@ -171,6 +210,7 @@ pub fn show(mut item: impl Interactive) {
                             needs_redraw = true;
                         }
                     }
+
                     WindowEvent::CloseRequested => {
                         println!("The close button was pressed; stopping");
                         *control_flow = ControlFlow::Exit
@@ -184,7 +224,9 @@ pub fn show(mut item: impl Interactive) {
             Event::LoopDestroyed => {
                 let state = State {
                     scale,
+                    #[cfg(feature="pan")]
                     window_size: (window_size.x(), window_size.y()),
+                    #[cfg(feature="pan")]
                     view_center: (view_center.x(), view_center.y())
                 };
                 try_write(state);
