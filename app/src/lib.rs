@@ -1,4 +1,4 @@
-#[macro_use] extern crate log;
+#[macro_use] extern crate log2;
 pub mod app;
 pub mod view;
 

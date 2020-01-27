@@ -86,9 +86,32 @@ impl WebGlWindow {
             framebuffer_size,
         }
     }
-    pub fn render(&mut self, scene: Scene, options: BuildOptions) {
+
+    pub fn render_as_blob_url(scene: &Scene) -> String {
+        use pathfinder_export::{FileFormat, Export};
+        use js_sys::{Array, Uint8Array};
+        use web_sys::{Blob, console, BlobPropertyBag, Url};
+
+        let mut out = Vec::new();
+        scene.export(&mut out, FileFormat::SVG).unwrap();
+
+        let mut bag = BlobPropertyBag::new();
+        bag.type_("image/svg+xml");
+        let blob = Blob::new_with_u8_array_sequence_and_options(
+            &Array::of1(&Uint8Array::from(out.as_slice())),
+            &bag
+        ).unwrap();
+        Url::create_object_url_with_blob(&blob).unwrap()
+    }
+
+    pub fn render(&mut self, mut scene: Scene, options: BuildOptions) {
+        debug!("render");
+        scene.set_view_box(RectF::new(Vector2F::default(), self.framebuffer_size().to_f32()));
         self.renderer.begin_scene();
-        scene.build(options, Listener::new(|cmd| self.renderer.render_command(&cmd)), &SequentialExecutor);
+        scene.build(options, Listener::new(|cmd| {
+            debug!("{:?}", cmd);
+            self.renderer.render_command(&cmd);
+        }), &SequentialExecutor);
         self.renderer.end_scene();
     }
     

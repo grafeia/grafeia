@@ -203,6 +203,7 @@ impl Interactive for App {
         scene
     }
     fn mouse_input(&mut self, pos: Vector2F, state: ElementState) -> bool {
+        info!("mouse input at {:?}, state = {:?}", pos, state);
         let old_cursor = self.cursor.take();
 
         dbg!(pos, state);
@@ -224,6 +225,7 @@ impl Interactive for App {
     }
 
     fn keyboard_input(&mut self, state: ElementState, keycode: VirtualKeyCode) -> bool {
+        info!("keyboard input keycode = {:?}, state = {:?}", keycode, state);
         match (state, keycode) {
             (ElementState::Pressed, VirtualKeyCode::Right) => {
                 if let Some(cursor) = self.cursor {

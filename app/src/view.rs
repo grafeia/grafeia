@@ -46,7 +46,7 @@ pub trait Interactive: 'static {
 }
 
 
-pub fn show(mut item: impl Interactive) -> Result<(), Box<Error>> {
+pub fn show(mut item: impl Interactive) {
     info!("creating event loop");
     let event_loop = EventLoop::new();
 
@@ -80,10 +80,12 @@ pub fn show(mut item: impl Interactive) -> Result<(), Box<Error>> {
     info!("entering the event loop");
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;
-        
+        debug!("event: {:?}", event);
+
         match event {
             Event::RedrawRequested(_) => {
                 let physical_size = window.framebuffer_size().to_f32();
+                debug!("physical_size = {:?}", physical_size);
                 let scene = item.scene();
                 let tr = Transform2F::from_translation(physical_size.scale(0.5)) *
                     Transform2F::from_scale(Vector2F::splat(dpi * scale)) *

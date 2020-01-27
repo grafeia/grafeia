@@ -1,1 +1,0 @@
-wasm_bindgen("pkg/web_bg.wasm").catch(console.error);
