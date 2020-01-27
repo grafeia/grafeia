@@ -7,4 +7,5 @@ members = [
 ]
 
 [patch.crates-io]
-winit = { git = "https://github.com/s3bk/winit/", branch = "experiment" }
+#winit = { git = "https://github.com/s3bk/winit/", branch = "experiment" }
+winit = { path = "../winit" }

@@ -2193,7 +2193,6 @@ checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
 [[package]]
 name = "winit"
 version = "0.20.0"
-source = "git+https://github.com/s3bk/winit/?branch=experiment#8ae85b078b8f20cbc30a6c53d28e14d7df63d29a"
 dependencies = [
  "android_glue",
  "bitflags",

@@ -54,7 +54,14 @@ pub struct WebGlWindow {
 }
 impl WebGlWindow {
     pub fn new<T>(event_loop: &EventLoop<T>, canvas_id: &str) -> Self {
-        let canvas: HtmlCanvasElement =  web_sys::window().unwrap()
+        let window = web_sys::window().unwrap();
+
+        let window_size = Vector2F::new(
+            window.inner_width().unwrap().as_f64().unwrap() as f32,
+            window.inner_height().unwrap().as_f64().unwrap() as f32
+        );
+
+        let canvas: HtmlCanvasElement = window
             .document().unwrap()
             .get_element_by_id(canvas_id).unwrap()
             .dyn_into().unwrap();
@@ -65,11 +72,9 @@ impl WebGlWindow {
         
         let window = WindowBuilder::new()
             .with_canvas(Some(canvas))
+            .with_inner_size(PhysicalSize::new(window_size.x(), window_size.y()))
             .build(event_loop)
             .unwrap();
-        
-        let PhysicalSize { width, height } = window.inner_size();
-        let window_size = Vector2F::new(width as _, height as _);
 
         let dpi = window.scale_factor() as f32;
         let mut framebuffer_size = window_size.scale(dpi).to_i32();

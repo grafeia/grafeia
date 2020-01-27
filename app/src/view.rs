@@ -50,7 +50,11 @@ pub fn show(mut item: impl Interactive) {
     info!("creating event loop");
     let event_loop = EventLoop::new();
 
-    let mut scale = 1.0;
+    #[cfg(target_arch="wasm32")]
+    let mut scale = 96.0 / 25.4;
+
+    #[cfg(target_os="linux")]
+    let mut scale = 1.0 / 25.4;
 
     let scene = item.scene();
     let view_box = scene.view_box();
@@ -80,7 +84,6 @@ pub fn show(mut item: impl Interactive) {
     info!("entering the event loop");
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;
-        debug!("event: {:?}", event);
 
         match event {
             Event::RedrawRequested(_) => {
@@ -106,18 +109,19 @@ pub fn show(mut item: impl Interactive) {
                 _ => {}
             }
             Event::WindowEvent { event, .. } =>  {
+                match event {
+                    WindowEvent::CursorMoved { .. } => {},
+                    _ => info!("event: {:?}", event)
+                }
+
                 let mut needs_redraw = false;
-                let inverse_tr = |p: Vector2F| -> Vector2F {
-                    Transform2F::from_translation(view_center) *
-                    Transform2F::from_scale(Vector2F::splat(1.0 / (dpi * scale))) *
-                    Transform2F::from_translation(window_size.scale(-0.5 * dpi)) *
-                    p
-                };
 
                 match event {
-                    WindowEvent::ScaleFactorChanged { scale_factor, new_inner_size: &mut PhysicalSize { width, height } } => {
+                    WindowEvent::ScaleFactorChanged { scale_factor, new_inner_size: PhysicalSize { width, height } } => {
                         dpi = scale_factor as f32;
-                        window.resize(Vector2F::new(width as _, height as _));
+                        let physical_size = Vector2F::new(width as f32, height as f32);
+                        window.resize(physical_size);
+                        window_size = physical_size.scale(1.0 / dpi);
                         needs_redraw = true;
                     }
                     WindowEvent::Resized(PhysicalSize {width, height}) => {
@@ -126,8 +130,9 @@ pub fn show(mut item: impl Interactive) {
                         window_size = physical_size.scale(1.0 / dpi);
                         needs_redraw = true;
                     }
-                    WindowEvent::KeyboardInput { input: KeyboardInput { state, virtual_keycode: Some(keycode), .. }, ..  }
-                        => needs_redraw |= item.keyboard_input(state, keycode),
+                    WindowEvent::KeyboardInput { input: KeyboardInput { state, virtual_keycode: Some(keycode), .. }, ..  } => {
+                        needs_redraw |= item.keyboard_input(state, keycode);
+                    }
                     WindowEvent::ReceivedCharacter(c) => needs_redraw |= item.char_input(c),
                     WindowEvent::CursorMoved { position: PhysicalPosition { x, y }, .. } => {
                         let new_pos = Vector2F::new(x as f32, y as f32);
@@ -135,7 +140,7 @@ pub fn show(mut item: impl Interactive) {
                         cursor_pos = new_pos;
 
                         if dragging {
-                            view_center = view_center - cursor_delta.scale(1.0 / scale);
+                            view_center = view_center - cursor_delta.scale(1.0 / (scale * dpi));
                             needs_redraw = true;
                         }
                     },
@@ -143,7 +148,14 @@ pub fn show(mut item: impl Interactive) {
                         match (state, modifiers.shift()) {
                             (ElementState::Pressed, true) => dragging = true,
                             (ElementState::Released, _) if dragging => dragging = false,
-                            _ => needs_redraw |= item.mouse_input(inverse_tr(cursor_pos), state)
+                            _ => {
+                                let scene_pos = 
+                                Transform2F::from_translation(view_center) *
+                                Transform2F::from_scale(Vector2F::splat(1.0 / (dpi * scale))) *
+                                Transform2F::from_translation(window_size.scale(-0.5 * dpi)) *
+                                cursor_pos;
+                                needs_redraw |= item.mouse_input(scene_pos, state);
+                            }
                         }
                     },
                     WindowEvent::MouseWheel { delta, modifiers, .. } => {
