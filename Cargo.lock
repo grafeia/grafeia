@@ -918,8 +918,9 @@ dependencies = [
 [[package]]
 name = "log2"
 version = "0.1.0"
-source = "git+https://github.com/s3bk/log2/#dc4e9c3724e05dbca2c925e0d3754f14b1c19ab3"
+source = "git+https://github.com/s3bk/log2/#9665a1815fa7aaf03c5f456ce3522bad516c84b2"
 dependencies = [
+ "cfg-if",
  "wasm-bindgen",
  "web-sys",
 ]
@@ -1959,7 +1960,7 @@ version = "0.1.0"
 source = "git+https://github.com/s3bk/vector/#672ba18be3efe572febd4d4b643e5bd2026fef55"
 dependencies = [
  "itertools",
- "log 0.4.8",
+ "log 0.3.9",
  "pathfinder_content",
  "pathfinder_geometry",
  "pathfinder_renderer",

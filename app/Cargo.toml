@@ -4,6 +4,9 @@ version = "0.1.0"
 authors = ["Sebastian K <s3bk@protonmail.com>"]
 edition = "2018"
 
+[features]
+pan = []
+
 [dependencies]
 grafeia_core = { path = "../core" }
 pathfinder_content = { git = "https://github.com/s3bk/pathfinder/" }

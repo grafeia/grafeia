@@ -6,5 +6,5 @@ authors = ["Sebastian K <s3bk@protonmail.com>"]
 edition = "2018"
 
 [dependencies]
-grafeia_app = { path = "../app" }
+grafeia_app = { path = "../app", features = ["pan"] }
 env_logger = "*"

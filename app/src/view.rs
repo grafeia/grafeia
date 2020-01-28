@@ -54,11 +54,8 @@ pub fn show(mut item: impl Interactive) {
     info!("creating event loop");
     let event_loop = EventLoop::new();
 
-    #[cfg(target_arch="wasm32")]
     let mut scale = 96.0 / 25.4;
-
-    #[cfg(target_os="linux")]
-    let mut scale = 1.0 / 25.4;
+    // (150px / inch) * (1inch / 25.4mm) = 150px / 25.mm
 
     let scene = item.scene();
     let view_box = scene.view_box();
