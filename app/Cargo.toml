@@ -18,22 +18,15 @@ vector = { git = "https://github.com/s3bk/vector/" }
 font = { git = "https://github.com/pdf-rs/font" }
 
 cfg-if = "*"
-euclid = "0.19"
-log2 = { git = "https://github.com/s3bk/log2/" }
-winit = { version = "*", features = ["web-sys"] }
+winit = { git = "https://github.com/s3bk/winit", features = ["web-sys"] }
 serde = { version = "1.0", features = ["derive"] }
-serde_json = "*"
 unicode-segmentation = "1.6.0"
 bincode = "*"
+pathfinder_view = { git = "https://github.com/s3bk/pathfinder_view" }
+log = "0.4.8"
 
 [target.'cfg(target_arch="wasm32")'.dependencies]
-pathfinder_webgl = { git = "https://github.com/s3bk/pathfinder/" }
-web-sys = { version = "*", features = ["HtmlCanvasElement", "Window", "Document", "WebGl2RenderingContext", "Blob", "console", "BlobPropertyBag", "Url"] }
-js-sys = "*"
+web-sys = { version = "*", features = ["Storage", "Window"] }
 wasm-bindgen = "*"
-
-[target.'cfg(target_os="linux")'.dependencies]
-pathfinder_gl = { git = "https://github.com/s3bk/pathfinder/" }
-fst = "*"
-gl = "0.6"
-glutin = "0.22.0"
+serde_json = "*"
+base64  = "*"

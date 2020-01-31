@@ -1,7 +1,6 @@
-use crate::content::{*};
+use crate::*;
 use crate::layout::{Writer, Glue, Style, ColumnLayout, FlexMeasure};
 use crate::units::Length;
-use crate::Display;
 use crate::text::{grapheme_indices, build_gids};
 use std::collections::hash_map::{HashMap, Entry};
 use font;
@@ -22,11 +21,11 @@ use pathfinder_renderer::{
 
 #[derive(Clone)]
 struct Context<'a> {
-    storage:    &'a Storage,
-    target:     &'a Target,
+    storage:     &'a Storage,
+    target:      &'a Target,
     type_design: &'a TypeDesign,
-    root:       &'a Sequence,
-    design:     &'a Design,
+    document:    &'a Document,
+    design:      &'a Design,
 }
 
 #[derive(Debug)]
@@ -58,7 +57,6 @@ impl Page {
         None
     }
     pub fn position(&self, Tag(idx): Tag) -> Option<Vector2F> {
-        dbg!(&self.positions);
         self.positions.get(&idx).cloned()
     }
 }
@@ -79,17 +77,17 @@ impl Cache {
         }
     }
 
-    pub fn render(&mut self, storage: &Storage, target: &Target, root: &Sequence, design: &Design) -> Vec<Page> {
+    pub fn render(&mut self, storage: &Storage, target: &Target, document: &Document, design: &Design) -> Vec<Page> {
         let mut writer = Writer::new();
         let type_design = design.default();
         let context = Context {
             storage,
             target,
             type_design,
-            root,
+            document,
             design
         };
-        self.render_sequence(&mut writer, &context, root, 0);
+        self.render_sequence(&mut writer, &context, document.root(), 0);
 
         let mut pages = Vec::new();
         let stream = writer.finish();
@@ -161,7 +159,7 @@ impl Cache {
         }
     }
     fn render_item<'a>(&mut self, writer: &mut Writer<(&'a Font, usize)>, ctx: &Context<'a>, item: &Item, idx: usize) {
-        assert_eq!(ctx.root.find(Tag(idx)).unwrap().1 as *const _, item as *const _);
+        assert_eq!(ctx.document.find(Tag(idx)).unwrap().1 as *const _, item as *const _);
 
         match *item {
             Item::Word(key) => {
@@ -176,32 +174,56 @@ impl Cache {
             Item::Sequence(ref seq) => self.render_sequence(writer, ctx, seq, idx+1)
         }
     }
-    pub fn get_position_on_page(&self, storage: &Storage, design: &Design, root: &Sequence, page: &Page, tag: Tag, byte_pos: usize) -> Option<(Vector2F, TypeKey)> {
+    pub fn get_position_on_page(&self, storage: &Storage, design: &Design, document: &Document, page: &Page, tag: Tag, byte_pos: usize) -> Option<(Vector2F, TypeKey)> {
+        match document.find(tag)? {
+            (seq, &Item::Word(key)) => {
+                let item_pos = page.position(tag)?;
+                let type_design = design.get_type_or_default(seq.typ());
+                let word = storage.get_word(key);
+                let face = storage.get_font_face(type_design.font.font_face);
+                let grapheme_indices = grapheme_indices(face, &word.text);
+                let layout = self.layout_cache.get(&(type_design.font, key)).unwrap();
+
+                for (&n, &(gid, offset)) in grapheme_indices.iter().zip(layout.glyphs.iter()) {
+                    if n >= byte_pos {
+                        return Some((item_pos + offset.vector, seq.typ()));
+                    }
+                }
+
+                // point to the end
+                return Some((item_pos + layout.advance, seq.typ()));
+            }
+            (parent, &Item::Sequence(ref seq)) => {
+                for (tag, item) in document.items(tag .. tag + seq.num_nodes()) {
+                    match *item {
+                        Item::Word(_) => {
+                            let item_pos = page.position(tag)?;
+                            return Some((item_pos, seq.typ()));
+                        }
+                        _ => {}
+                    }
+                }
+                None
+            }
+            _ => None
+        }
+    }
+    pub fn get_rect_on_page(&self, storage: &Storage, design: &Design, document: &Document, page: &Page, tag: Tag) -> Option<(RectF, TypeKey)> {
         // first step is to locate the item on the page
-        let item_pos = dbg!(page.position(tag))?;
+        let item_pos = page.position(tag)?;
 
         // then get the layout of the word
-        if let (seq, &Item::Word(key)) = dbg!(root.find(tag))? {
+        if let (seq, &Item::Word(key)) = document.find(tag)? {
             let type_design = design.get_type_or_default(seq.typ());
-            let word = storage.get_word(key);
-            let face = storage.get_font_face(type_design.font.font_face);
-            let grapheme_indices = grapheme_indices(face, &word.text);
             let layout = self.layout_cache.get(&(type_design.font, key)).unwrap();
 
-            dbg!(layout, &grapheme_indices, byte_pos);
-            for (&n, &(gid, offset)) in grapheme_indices.iter().zip(layout.glyphs.iter()) {
-                if n >= byte_pos {
-                    return Some((item_pos + offset.vector, seq.typ()));
-                }
-            }
-
             // point to the end
-            return Some((item_pos + layout.advance, seq.typ()));
+            return Some((RectF::new(item_pos, layout.advance), seq.typ()));
         }
         None
     }
-    pub fn find(&self, storage: &Storage, design: &Design, root: &Sequence, offset: f32, tag: Tag) -> Option<(Vector2F, usize, TypeKey)> {
-        if let (seq, &Item::Word(key)) = root.find(tag)? {
+    pub fn find(&self, storage: &Storage, design: &Design, document: &Document, offset: f32, tag: Tag) -> Option<(Vector2F, usize, TypeKey)> {
+        if let (seq, &Item::Word(key)) = document.find(tag)? {
             let type_design = design.get_type_or_default(seq.typ());
             let word = storage.get_word(key);
             let face = storage.get_font_face(type_design.font.font_face);

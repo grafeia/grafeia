@@ -1,5 +1,5 @@
 use std::fmt::{self, Debug};
-use crate::content::{WordKey, SymbolKey};
+use crate::{WordKey, SymbolKey};
 use crate::units::Length;
 
 // private mods

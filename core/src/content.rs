@@ -18,14 +18,12 @@ Design
 - margins
 */
 
-use slotmap::SlotMap;
-use indexmap::{IndexMap, IndexSet};
-use std::collections::HashMap;
+use std::collections::{HashMap};
 use std::fmt::{self, Debug};
 use std::borrow::Borrow;
 use std::io;
 use std::path::Path;
-use std::ops::Deref;
+use std::ops::{Deref, RangeBounds};
 use font;
 use pathfinder_content::outline::Outline;
 use serde::{Serialize, Deserialize, Serializer};
@@ -33,8 +31,10 @@ use serde::{Serialize, Deserialize, Serializer};
 use crate::layout::FlexMeasure;
 use crate::{
     units::{Length, Bounds, Rect},
-    Display, Color
+    Display, Color,
+    gen::GenIter
 };
+use crate::storage::{WordKey, SymbolKey, TargetKey, TypeKey, FontFaceKey};
 
 // possible design and information what it means
 // for example: plain text, a bullet list, a heading
@@ -97,22 +97,6 @@ impl Borrow<str> for Word {
     }
 }
 
-macro_rules! key {
-    ($ty:ident) => {
-        #[derive(Serialize, Deserialize)]
-        #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
-        pub struct $ty(usize);
-    }
-}
-
-key!(WordKey);
-key!(StringKey);
-key!(SymbolKey);
-key!(TypeKey);
-new_key_type! {
-    pub struct FontFaceKey;
-    pub struct TargetKey;
-}
 
 #[derive(Serialize, Deserialize)]
 #[derive(Debug)]
@@ -138,6 +122,13 @@ pub struct Attribute;
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Tag(pub(crate) usize);
 
+impl std::ops::Add<usize> for Tag {
+    type Output = Tag;
+    fn add(self, rhs: usize) -> Tag {
+        Tag(self.0 + rhs)
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 #[derive(Debug)]
 pub struct Sequence {
@@ -160,35 +151,11 @@ impl Sequence {
     pub fn num_nodes(&self) -> usize {
         self.num_nodes
     }
-    // parent and item
-    pub fn find(&self, Tag(mut idx): Tag) -> Option<(&Sequence, &Item)> {
-        for item in self.items.iter() {
-            if idx == 0 {
-                return Some((self, item));
-            }
-            idx -= 1;
-            match item {
-                Item::Word(_) | Item::Symbol(_) => {}
-                Item::Sequence(ref seq) => {
-                    if idx < seq.num_nodes {
-                        return seq.find(Tag(idx));
-                    }
-                    idx -= seq.num_nodes;
-                    if idx == 0 {
-                        return Some((self, item));
-                    }
-                    idx -= 1;
-                }
-            }
-        }
-        None
-    }
 
-    pub fn replace(&mut self, Tag(mut idx): Tag, new_item: Item) {
-        use std::mem::replace;
-        for item in self.items.iter_mut() {
+    fn apply(&mut self, mut idx: usize, f: impl FnOnce(&mut Sequence, usize)) {
+        for (i, item) in self.items.iter_mut().enumerate() {
             if idx == 0 {
-                replace(item, new_item);
+                f(self, i);
                 break;
             }
             idx -= 1;
@@ -196,12 +163,12 @@ impl Sequence {
                 Item::Word(_) | Item::Symbol(_) => {}
                 Item::Sequence(ref mut seq) => {
                     if idx < seq.num_nodes {
-                        seq.replace(Tag(idx), new_item);
+                        seq.apply(idx, f);
                         break;
                     }
                     idx -= seq.num_nodes;
                     if idx == 0 {
-                        replace(item, new_item);
+                        f(self, i);
                         break;
                     }
                     idx -= 1;
@@ -211,61 +178,144 @@ impl Sequence {
 
         self.num_nodes = self.items.iter().map(|item| item.num_nodes()).sum();
     }
-}
 
+    fn walk(&self, mut f: impl FnMut(&Item)) {
+        for item in self.items.iter() {
+            f(item);
+            match *item {
+                Item::Sequence(ref seq) => seq.walk(|item| f(item)),
+                _ => {}
+            }
+        }
+    }
+}
 #[derive(Serialize, Deserialize)]
-pub struct Storage {
-    words:   IndexSet<Word>,
-    symbols: IndexSet<Symbol>,
-    types:   IndexMap<String, Type>,
-    fonts:   SlotMap<FontFaceKey, FontFace>,
-    targets: SlotMap<TargetKey, Target>
+#[derive(Debug)]
+pub struct Document {
+    root: Sequence
 }
-impl Storage {
-    pub fn new() -> Storage {
-        Storage {
-            words:   IndexSet::new(),
-            symbols: IndexSet::new(),
-            types:   IndexMap::new(),
-            fonts:   SlotMap::with_key(),
-            targets: SlotMap::with_key()
+impl Document {
+    pub fn new(root: Sequence) -> Self {
+        Document { root }
+    }
+    // parent and item
+    pub fn find(&self, Tag(mut idx): Tag) -> Option<(&Sequence, &Item)> {
+        let mut seq = &self.root;
+        'a: loop {
+            for item in seq.items.iter() {
+                if idx == 0 {
+                    return Some((seq, item));
+                }
+                idx -= 1;
+                match item {
+                    Item::Word(_) | Item::Symbol(_) => {}
+                    Item::Sequence(ref s) => {
+                        if idx < s.num_nodes {
+                            seq = s;
+                            continue 'a;
+                        }
+                        idx -= s.num_nodes;
+                        if idx == 0 {
+                            return Some((s, item));
+                        }
+                        idx -= 1;
+                    }
+                }
+            }
+            return None;
         }
     }
-    pub fn insert_word(&mut self, text: &str) -> WordKey {
-        if let Some((idx, _)) = self.words.get_full(text) {
-            return WordKey(idx);
-        }
-        let (idx, _) = self.words.insert_full(Word { text: text.to_owned() });
-        WordKey(idx)
-    }
-    pub fn insert_symbol(&mut self, text: &str) -> SymbolKey {
-        if let Some((idx, _)) = self.symbols.get_full(text) {
-            return SymbolKey(idx);
-        }
-        let (idx, _) = self.symbols.insert_full(Symbol { text: text.to_owned() });
-        SymbolKey(idx)
-    }
-    pub fn insert_type(&mut self, key: String, typ: Type) -> TypeKey {
-        let (idx, _) = self.types.insert_full(key, typ);
-        TypeKey(idx)
-    }
-    pub fn insert_font_face(&mut self, font_face: FontFace) -> FontFaceKey {
-        self.fonts.insert(font_face)
+    pub fn root(&self) -> &Sequence {
+        &self.root
     }
 
-    pub fn get_word(&self, key: WordKey) -> &Word {
-        self.words.get_index(key.0).unwrap()
+    pub fn replace(&mut self, Tag(idx): Tag, new_item: Item) {
+        self.root.apply(idx, |seq, i| seq.items[i] = new_item)
     }
-    pub fn get_symbol(&self, key: SymbolKey) -> &Symbol {
-        self.symbols.get_index(key.0).unwrap()
+
+    pub fn remove(&mut self, Tag(idx): Tag) {
+        self.root.apply(idx, |seq, i| { seq.items.remove(i); })
     }
-    pub fn get_font_face(&self, key: FontFaceKey) -> &FontFace {
-        self.fonts.get(key).unwrap()
+
+    pub fn insert(&mut self, Tag(idx): Tag, new_item: Item) {
+        self.root.apply(idx, |seq, i| seq.items.insert(i, new_item))
     }
-    pub fn find_type(&self, name: &str) -> Option<TypeKey> {
-        self.types.get_full(name).map(|(idx, _, _)| TypeKey(idx))
+
+    pub fn get_previous_tag(&self, Tag(idx): Tag) -> Option<Tag> {
+        if idx > 0 {
+            Some(Tag(idx - 1))
+        } else {
+            None
+        }
+    }
+    pub fn get_next_tag(&self, Tag(idx): Tag) -> Option<Tag> {
+        if idx + 1 < self.root.num_nodes {
+            Some(Tag(idx + 1))
+        } else {
+            None
+        }
+    }
+    pub fn items(&self, range: impl RangeBounds<Tag>) -> impl Iterator<Item=(Tag, &Item)> {
+        use std::ops::Bound;
+        let start = match range.start_bound() {
+            Bound::Included(&Tag(idx)) => idx,
+            Bound::Excluded(&Tag(idx)) => idx + 1,
+            Bound::Unbounded => 0
+        };
+        let end = match range.end_bound() {
+            Bound::Included(&Tag(idx)) => idx + 1,
+            Bound::Excluded(&Tag(idx)) => idx,
+            Bound::Unbounded => self.root.num_nodes
+        };
+
+        GenIter::new(move || {
+            let mut stack = vec![];
+            let mut seq = &self.root;
+            let mut idx = 0;
+            let mut i = 0;
+
+            loop {
+                let item = match seq.items.get(i) {
+                    Some(item) => item,
+                    None => {
+                        if let Some((s, j)) = stack.pop() {
+                            seq = s;
+                            i = j;
+                            continue;
+                        } else {
+                            return;
+                        }
+                    }
+                };
+                
+                if idx >= end {
+                    return;
+                }
+
+                if idx >= start {
+                    yield (Tag(idx), item);
+                }
+
+                idx += 1;
+                i += 1;
+
+                match *item {
+                    Item::Word(_) | Item::Symbol(_) => {}
+                    Item::Sequence(ref s) => {
+                        if idx <= end {
+                            stack.push((seq, i));
+                            seq = s;
+                            i = 0;
+                            continue;
+                        }
+                    }
+                }
+            }
+        })
     }
 }
+
+
 
 #[derive(Serialize, Deserialize)]
 pub struct Design {

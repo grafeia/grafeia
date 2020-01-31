@@ -6,5 +6,5 @@ authors = ["Sebastian K <s3bk@protonmail.com>"]
 edition = "2018"
 
 [dependencies]
-grafeia_app = { path = "../app", features = ["pan"] }
-env_logger = "*"
+grafeia_app = { path = "../app" }
+pathfinder_view = { git = "https://github.com/s3bk/pathfinder_view", features = ["pan"] }

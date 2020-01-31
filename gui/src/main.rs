@@ -1,11 +1,6 @@
-use grafeia_app::{
-    app::App,
-    view,
-    view::Interactive
-};
+use grafeia_app::app::App;
+use pathfinder_view::show_pan;
 
 fn main() {
-    env_logger::init();
-
-    view::show(App::load().unwrap_or_else(App::build));
+    show_pan(App::load().unwrap_or_else(App::build));
 }

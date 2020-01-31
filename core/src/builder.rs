@@ -1,4 +1,4 @@
-use crate::content::{Storage, Sequence, TypeKey, Item, Type};
+use crate::{Storage, Sequence, TypeKey, Item, Type, Document};
 
 pub struct ContentBuilder<'a> {
     storage: &'a mut Storage,
@@ -41,8 +41,8 @@ impl<'a> ContentBuilder<'a> {
             parent: self
         }
     }
-    pub fn finish(self) -> Sequence {
-        Sequence::new(self.document_key, self.items)
+    pub fn finish(self) -> Document {
+        Document::new(Sequence::new(self.document_key, self.items))
     }
 }
 

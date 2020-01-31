@@ -42,7 +42,7 @@ impl FlexMeasure {
     }
     
     /// calculate the factor that yields the given length.
-    /// Or None when there aint one.
+    /// Or None when there is none.
     // m.at(m.factor(w).unwrap()) == w
     pub fn factor(&self, width: Length) -> Option<f32> {
         if width < self.shrink {
@@ -65,9 +65,9 @@ impl FlexMeasure {
     pub fn extend(&mut self, width: Length) {
         if width > self.width {
             self.width = width;
-            if width > self.stretch {
-                self.stretch = width;
-            }
+        }
+        if width > self.stretch {
+            self.stretch = width;
         }
     }
 }

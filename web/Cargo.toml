@@ -12,6 +12,8 @@ crate-type = ["cdylib"]
 grafeia_app = { path = "../app" }
 wasm-bindgen = "0.2.48"
 web-sys = { version = "*", features=["console"]}
+js-sys = "*"
 console_log = "*"
-log2 = { git = "https://github.com/s3bk/log2" }
+log = "0.4.8"
 console_error_panic_hook = "*"
+pathfinder_view = { git = "https://github.com/s3bk/pathfinder_view" }

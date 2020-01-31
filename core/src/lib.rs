@@ -11,6 +11,10 @@ pub mod builder;
 pub mod draw;
 mod gen;
 mod text;
+mod storage;
+
+pub use storage::*;
+pub use content::*;
 
 #[derive(Serialize, Deserialize)]
 #[derive(Debug, Copy, Clone)]

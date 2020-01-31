@@ -1,26 +1,56 @@
 use grafeia_core::{
-    content::*,
+    *,
     units::*,
     builder::ContentBuilder,
     draw::{Cache, Page},
     layout::FlexMeasure,
     Color, Display
 };
-use font;
 use pathfinder_renderer::scene::Scene;
 use pathfinder_geometry::vector::Vector2F;
-use crate::view::Interactive;
-use winit::event::{ElementState, VirtualKeyCode};
+use pathfinder_view::{Interactive, State};
+use winit::event::{ElementState, VirtualKeyCode, ModifiersState};
 use vector::{PathBuilder, PathStyle, Surface};
 use unicode_segmentation::UnicodeSegmentation;
 use serde::{Serialize, Deserialize};
-use std::fs::File;
+
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::prelude::*;
+
+#[cfg(not(target_arch = "wasm32"))]
+fn store_data(key: &str, data: &[u8]) {
+    std::fs::write(&format!(".{}.data", key), data).unwrap();
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn load_data(key: &str) -> Option<Vec<u8>> {
+    std::fs::read(&format!(".{}.data", key)).ok()
+}
+
+#[cfg(target_arch = "wasm32")]
+fn store_data(key: &str, data: &[u8]) {
+    let encoded = base64::encode(data);
+    web_sys::window().unwrap()
+        .local_storage().unwrap().unwrap()
+        .set_item(key, &encoded).unwrap();
+}
+
+#[cfg(target_arch = "wasm32")]
+fn load_data(key: &str) -> Option<Vec<u8>> {
+    let encoded = web_sys::window().unwrap()
+        .local_storage().unwrap().unwrap()
+        .get_item(key).unwrap()?;
+    
+    base64::decode(&encoded).ok()
+}
+
+
 
 #[derive(Serialize, Deserialize)]
 pub struct App {
     storage: Storage,
     target: Target,
-    document: Sequence,
+    document: Document,
     design: Design,
 
     #[serde(skip)]
@@ -150,116 +180,252 @@ impl App {
             cursor: None
         }
     }
+
     pub fn store(&self) {
-        bincode::serialize_into(File::create("app.data").unwrap(), self).unwrap()
+        store_data("app", &bincode::serialize(self).unwrap())
     }
-    pub fn load() -> Option<Self> {
-        let file = File::open("app.data").ok()?;
-        let mut app: Self = bincode::deserialize_from(file).ok()?;
+    pub fn load_from(data: &[u8]) -> Option<Self> {
+        info!("got {} bytes", data.len());
+        let mut app: Self = bincode::deserialize(data).ok()?;
+        info!("data decoded");
         app.render();
         Some(app)
+    }
+    pub fn load() -> Option<Self> {
+        let data = load_data("app")?;
+        Self::load_from(&data)
+    }
+    fn clean(&mut self) {
     }
     fn render(&mut self) {
         self.pages = self.cache.render(&self.storage, &self.target, &self.document, &self.design);
     }
-    fn set_cursor_to(&mut self, tag: Tag, text_pos: usize) {
-        self.cursor = self.cache.get_position_on_page(&self.storage, &self.design, &self.document, &self.pages[0], tag, text_pos)
-            .map(|(page_pos, type_key)| Cursor {
-                tag,
-                text_pos,
-                page_pos,
-                type_key
-            });
+    fn cursor_between(&mut self, left_tag: Tag, tag: Tag) -> Option<(Vector2F, TypeKey)> {
+        let left_rect = self.cache.get_rect_on_page(&self.storage, &self.design, &self.document, &self.pages[0], left_tag)?.0;
+        let (rect, type_key) = self.cache.get_rect_on_page(&self.storage, &self.design, &self.document, &self.pages[0], tag)?;
+        let l = left_rect.lower_right();
+        let r = rect.lower_left();
+        if l.y() == r.y() {
+            Some(((l + r).scale(0.5), type_key))
+        } else {
+            None
+        }
     }
-    fn text_op(&mut self, op: TextOp) -> bool {
-        let cursor = match self.cursor {
-            Some(cursor) => cursor,
-            _ => return false
-        };
-
-        match self.document.find(cursor.tag) {
-            Some((_, &Item::Word(word_key))) => {
-                let text = &self.storage.get_word(word_key).text;
-                let n = cursor.text_pos;
-
-                let (new_text, text_pos): (String, usize) = match op {
-                    TextOp::DeleteLeft if n > 0 => {
-                        let new_pos = text[.. n].grapheme_indices(true).rev().next()
-                            .map(|(n, _)| n).unwrap_or(0);
-                        let new_text = format!("{}{}", &text[.. new_pos], &text[n ..]);
-                        (new_text, new_pos)
-                    }
-                    TextOp::DeleteRight if n < text.len() => {
-                        let new_pos = text[n ..].grapheme_indices(true).nth(1)
-                            .map(|(m, _)| n + m).unwrap_or(text.len());
-                        let new_text = format!("{}{}", &text[.. n], &text[new_pos ..]);
-                        (new_text, new_pos)
-                    }
-                    TextOp::Insert(c) => {
-                        let new_text = format!("{}{}{}", &text[.. cursor.text_pos], c, &text[cursor.text_pos ..]);
-                        (new_text, cursor.text_pos + c.len_utf8())
-                    }
-                    _ => return false
-                };
-
-                let new_item = Item::Word(self.storage.insert_word(&new_text));
-                self.document.replace(cursor.tag, new_item);
-
-                self.render();
-
-                self.cursor = self.cache.get_position_on_page(&self.storage, &self.design, &self.document, &self.pages[0], cursor.tag, text_pos)
-                    .map(|(page_pos, type_key)| Cursor {
-                        tag: cursor.tag,
-                        text_pos,
+    fn set_cursor_to(&mut self, tag: Tag, pos: CursorPos) {
+        match pos {
+            CursorPos::Before => {
+                if let Some((page_pos, type_key)) = self.document.get_previous_tag(tag).and_then(|left| self.cursor_between(left, tag)) {
+                    self.cursor = Some(Cursor {
+                        tag,
+                        pos,
                         page_pos,
                         type_key
                     });
-                true
+                } else if let Some((rect, type_key)) = self.cache.get_rect_on_page(&self.storage, &self.design, &self.document, &self.pages[0], tag) {
+                    let typ = self.design.get_type_or_default(type_key);
+                    self.cursor = Some(Cursor {
+                        tag,
+                        pos,
+                        page_pos: rect.lower_left() - Vector2F::new(typ.word_space.width.value, 0.0),
+                        type_key
+                    });
+                } else {
+                    self.cursor = None;
+                }
             }
-            _ => false
+            CursorPos::Within(text_pos) => {
+                self.cursor = self.cache.get_position_on_page(&self.storage, &self.design, &self.document, &self.pages[0], tag, text_pos)
+                .map(|(page_pos, type_key)| Cursor {
+                    tag,
+                    pos,
+                    page_pos,
+                    type_key
+                });
+            }
         }
     }
-    fn cursor_op(&mut self, op: CursorOp) -> bool {
-        let cursor = match self.cursor {
-            Some(cursor) => cursor,
-            _ => return false
-        };
+    fn text_op(&mut self, op: TextOp) -> Option<(Tag, CursorPos)> {
+        let cursor = self.cursor?;
 
-        match self.document.find(cursor.tag) {
-            Some((_, &Item::Word(word_key))) => {
+        match (cursor.pos, self.document.find(cursor.tag)?) {
+            (CursorPos::Within(n), (_, &Item::Word(word_key))) => {
                 let text = &self.storage.get_word(word_key).text;
-                let pos = match op {
-                    CursorOp::GraphemeRight => {
-                        text[cursor.text_pos ..].grapheme_indices(true).nth(1)
-                            .map(|(n, _)| cursor.text_pos+n).unwrap_or(text.len())
+                dbg!(text, n);
+
+                match op {
+                    TextOp::DeleteGraphemeLeft if n > 0 => {
+                        let new_pos = text[.. n].grapheme_indices(true).rev().next()
+                            .map(|(n, _)| n).unwrap_or(0);
+                        let new_text = format!("{}{}", &text[.. new_pos], &text[n ..]);
+                        if new_text.len() == 0 {
+                            self.document.remove(cursor.tag);
+                            return Some((cursor.tag, CursorPos::Before));
+                        }
+                        let new_item = Item::Word(self.storage.insert_word(&new_text));
+                        self.document.replace(cursor.tag, new_item);
+                        Some((cursor.tag, CursorPos::Within(new_pos)))
+                    }
+                    TextOp::DeleteGraphemeRight if n < text.len() => {
+                        let new_pos = text[n ..].grapheme_indices(true).nth(1)
+                            .map(|(m, _)| n + m).unwrap_or(text.len());
+                        let new_text = format!("{}{}", &text[.. n], &text[new_pos ..]);
+                        if new_text.len() == 0 {
+                            self.document.remove(cursor.tag);
+                            return Some((cursor.tag, CursorPos::Before));
+                        }
+                        let new_item = Item::Word(self.storage.insert_word(&new_text));
+                        self.document.replace(cursor.tag, new_item);
+
+                        Some((cursor.tag, CursorPos::Within(n)))
+                    }
+                    TextOp::Insert(c) => {
+                        let new_text = format!("{}{}{}", &text[.. n], c, &text[n ..]);
+                        let new_item = Item::Word(self.storage.insert_word(&new_text));
+                        self.document.replace(cursor.tag, new_item);
+
+                        Some((cursor.tag, CursorPos::Within(n + c.len_utf8())))
+                    }
+                    // split, but only when within a word
+                    TextOp::Split if n > 0 && n < text.len() => {
+                        let left_text = text[.. n].to_owned();
+                        let right_text = text[n ..].to_owned();
+                        let left_item = Item::Word(self.storage.insert_word(&left_text));
+                        let right_item = Item::Word(self.storage.insert_word(&right_text));
+                        self.document.replace(cursor.tag, right_item);
+                        self.document.insert(cursor.tag, left_item);
+
+                        let tag = self.document.get_next_tag(cursor.tag)?;
+                        Some((tag, CursorPos::Within(0)))
+                    }
+
+                    TextOp::DeleteGraphemeLeft if n == 0 => {
+                        // join with previous item … if possible
+                        let left_tag = self.document.get_previous_tag(cursor.tag)?;
+                        match self.document.find(left_tag)? {
+                            (_, &Item::Word(left_word_key)) => {
+                                let left_text = &self.storage.get_word(left_word_key).text;
+                                let new_pos = left_text.len();
+                                let new_text = format!("{}{}", left_text, text);
+                                let new_item = Item::Word(self.storage.insert_word(&new_text));
+                                self.document.replace(left_tag, new_item);
+                                self.document.remove(cursor.tag);
+
+                                Some((left_tag, CursorPos::Within(new_pos)))
+                            }
+                            _ => None
+                        }
+                    }
+                    _ => None
+                }
+            }
+            (CursorPos::Before, (_, _)) => {
+                match op {
+                    TextOp::DeleteItemLeft => {
+                        let left_tag = self.document.get_previous_tag(cursor.tag)?;
+                        self.document.remove(left_tag);
+                        Some((left_tag, CursorPos::Before))
+                    }
+                    TextOp::DeleteItemRight => {
+                        self.document.remove(cursor.tag);
+                        Some((cursor.tag, CursorPos::Before))
+                    }
+                    _ => None
+                }
+            }
+            _ => None
+        }
+    }
+    fn cursor_op(&mut self, op: CursorOp) -> Option<(Tag, CursorPos)> {
+        let cursor = self.cursor?;
+
+        match (cursor.pos, self.document.find(cursor.tag)?) {
+            (CursorPos::Within(n), (_, &Item::Word(word_key))) => {
+                let text = &self.storage.get_word(word_key).text;
+                match op {
+                    CursorOp::GraphemeRight if n < text.len() => {
+                        let pos = text[n ..].grapheme_indices(true).nth(1)
+                            .map(|(m, _)| n + m).unwrap_or(text.len());
+                        Some((cursor.tag, CursorPos::Within(pos)))
+                    }
+                    CursorOp::GraphemeLeft if n > 0 => {
+                        let pos = text[.. n].grapheme_indices(true).rev().next()
+                            .map(|(n, _)| n).unwrap_or(0);
+                        Some((cursor.tag, CursorPos::Within(pos)))
                     }
                     CursorOp::GraphemeLeft => {
-                        text[.. cursor.text_pos].grapheme_indices(true).rev().next()
-                            .map(|(n, _)| n).unwrap_or(0)
+                        Some((cursor.tag, CursorPos::Before))
                     }
-                };
-                self.set_cursor_to(cursor.tag, pos);
-                return true;
+                    CursorOp::GraphemeRight => {
+                        let right = self.document.get_next_tag(cursor.tag)?;
+                        Some((right, CursorPos::Before))
+                    }
+                    CursorOp::ItemLeft => {
+                        Some((cursor.tag, CursorPos::Before))
+                    }
+                    CursorOp::ItemRight => {
+                        let right_tag = self.document.get_next_tag(cursor.tag)?;
+                        Some((right_tag, CursorPos::Before))
+                    }
+                    _ => None
+                }
             }
-            _ => false
+            (CursorPos::Before, _) => {
+                match op {
+                    CursorOp::GraphemeLeft => {
+                        let left_tag = self.document.get_previous_tag(cursor.tag)?;
+                        match self.document.find(left_tag)? {
+                            (_, &Item::Word(left_key)) => {
+                                let left_text = &self.storage.get_word(left_key).text;
+                                Some((left_tag, CursorPos::Within(left_text.len())))
+                            },
+                            _ => None
+                        }
+                    },
+                    CursorOp::GraphemeRight => {
+                        Some((cursor.tag, CursorPos::Within(0)))
+                    },
+                    CursorOp::ItemLeft => {
+                        let left_tag = self.document.get_previous_tag(cursor.tag)?;
+                        Some((left_tag, CursorPos::Before))
+                    }
+                    CursorOp::ItemRight => {
+                        let right_tag = self.document.get_next_tag(cursor.tag)?;
+                        Some((right_tag, CursorPos::Before))
+                    }
+                    _ => None
+                }
+            }
+            _ => None
         }
     }
 }
 
 enum TextOp {
     Insert(char),
-    DeleteLeft,
-    DeleteRight
+    Split,
+    DeleteGraphemeLeft,
+    DeleteGraphemeRight,
+    DeleteItemLeft,
+    DeleteItemRight,
 }
 enum CursorOp {
     GraphemeLeft,
     GraphemeRight,
+    ItemRight,
+    ItemLeft,
+}
+
+
+#[derive(PartialEq, Copy, Clone)]
+enum CursorPos {
+    Before,
+    Within(usize)
 }
 
 #[derive(PartialEq, Copy, Clone)]
 struct Cursor {
     tag: Tag,   // which item
-    text_pos: usize, // which byte in the item (if applicable)
+    pos: CursorPos, // between this and the following
     page_pos: Vector2F,
     type_key: TypeKey
 }
@@ -299,7 +465,7 @@ impl Interactive for App {
                 .map(|(word_offset, n, typ)| Cursor {
                     tag,
                     page_pos: word_offset + word_pos,
-                    text_pos: n,
+                    pos: CursorPos::Within(n),
                     type_key: typ
                 });
         }
@@ -307,26 +473,54 @@ impl Interactive for App {
         self.cursor != old_cursor
     }
 
-    fn keyboard_input(&mut self, state: ElementState, keycode: VirtualKeyCode) -> bool {
+    fn keyboard_input(&mut self, state: ElementState, keycode: VirtualKeyCode, modifiers: ModifiersState) -> bool {
         info!("keyboard input keycode = {:?}, state = {:?}", keycode, state);
-        match (state, keycode) {
-            (ElementState::Pressed, VirtualKeyCode::Right) => self.cursor_op(CursorOp::GraphemeRight),
-            (ElementState::Pressed, VirtualKeyCode::Left) => self.cursor_op(CursorOp::GraphemeLeft),
-            (ElementState::Pressed, VirtualKeyCode::Back) => self.text_op(TextOp::DeleteLeft),
-            (ElementState::Pressed, VirtualKeyCode::Delete) => self.text_op(TextOp::DeleteRight),
-            _ => false
+        let (update, s) = match (state, keycode, modifiers.shift()) {
+            (ElementState::Pressed, VirtualKeyCode::Right, false) => (false, self.cursor_op(CursorOp::GraphemeRight)),
+            (ElementState::Pressed, VirtualKeyCode::Right, true) => (false, self.cursor_op(CursorOp::ItemRight)),
+            (ElementState::Pressed, VirtualKeyCode::Left, false) => (false, self.cursor_op(CursorOp::GraphemeLeft)),
+            (ElementState::Pressed, VirtualKeyCode::Left, true) => (false, self.cursor_op(CursorOp::ItemLeft)),
+            (ElementState::Pressed, VirtualKeyCode::Back, false) => (true, self.text_op(TextOp::DeleteGraphemeLeft)),
+            (ElementState::Pressed, VirtualKeyCode::Back, true) => (true, self.text_op(TextOp::DeleteItemLeft)),
+            (ElementState::Pressed, VirtualKeyCode::Delete, false) => (true, self.text_op(TextOp::DeleteGraphemeRight)),
+            (ElementState::Pressed, VirtualKeyCode::Delete, true) => (true, self.text_op(TextOp::DeleteItemRight)),
+            _ => (false, None)
+        };
+        if update & s.is_some() {
+            self.render();
+        }
+        if let Some((tag, pos)) = s {
+            self.set_cursor_to(tag, pos);
+            true
+        } else {
+            false
         }
     }
 
     fn char_input(&mut self, c: char) -> bool {
-        match c {
+        let s = match c {
             // backspace
-            '\u{8}' => return false,
-            ' ' => return false,
+            '\u{8}' => None,
+            ' ' => self.text_op(TextOp::Split),
             _ => self.text_op(TextOp::Insert(c))
+        };
+        if let Some((tag, pos)) = s {
+            self.render();
+            self.set_cursor_to(tag, pos);
+            true
+        } else {
+            false
         }
     }
     fn exit(&mut self) {
+        self.clean();
         self.store()
+    }
+    fn save_state(&self, state: State) {
+        store_data("view", &bincode::serialize(&state).unwrap())
+    }
+    fn load_state(&self) -> Option<State> {
+        let data = load_data("view")?;
+        bincode::deserialize(&data).ok()
     }
 }
