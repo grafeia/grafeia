@@ -1,6 +1,17 @@
 use grafeia_app::app::App;
-use pathfinder_view::show_pan;
+use std::alloc::System;
+
+#[global_allocator]
+pub static mut THE_ALLOC: System = System;
 
 fn main() {
-    show_pan(App::load().unwrap_or_else(App::build));
+    env_logger::init();
+    let app = App::load().unwrap_or_else(App::build);
+    let (data, ext) = app.export();
+    std::fs::write(&format!("document.{}", ext), data);
+
+    pathfinder_view::show(app, pathfinder_view::Config {
+        zoom: true,
+        pan: true
+    });
 }

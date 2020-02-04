@@ -7,4 +7,6 @@ edition = "2018"
 
 [dependencies]
 grafeia_app = { path = "../app" }
-pathfinder_view = { git = "https://github.com/s3bk/pathfinder_view", features = ["pan"] }
+pathfinder_view = { git = "https://github.com/s3bk/pathfinder_view" }
+env_logger = "*"
+[profile.release]

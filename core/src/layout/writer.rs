@@ -1,25 +1,25 @@
 use crate::layout::*;
 use std::iter::Extend;
 
-pub struct BranchGenerator<'a, T> {
-    parent: &'a Writer<T>,
-    branches: Vec<(StreamVec<T>, Glue)>
+pub struct BranchGenerator<'a> {
+    parent: &'a Writer,
+    branches: Vec<(StreamVec, Glue)>
 }
-impl<'a, T: Debug> BranchGenerator<'a, T> {
-    pub fn add(&mut self, mut f: impl FnMut(&mut Writer<T>)) {
+impl<'a> BranchGenerator<'a> {
+    pub fn add(&mut self, mut f: impl FnMut(&mut Writer)) {
         let mut w = self.parent.dup();
         f(&mut w);
         self.branches.push((w.stream, w.state));
     }
 }
-pub struct Writer<T> {
+pub struct Writer {
     state:      Glue,
-    stream:     StreamVec<T>,
+    stream:     StreamVec,
 }
 
-impl<T: Debug> StreamVec<T> {
+impl StreamVec {
     // careful with the arguments.. they all have the same type!
-    fn merge(&mut self, StreamVec(mut a): StreamVec<T>, StreamVec(mut b): StreamVec<T>) {
+    fn merge(&mut self, StreamVec(mut a): StreamVec, StreamVec(mut b): StreamVec) {
         let out = &mut self.0;
 
         if a.len() == 0 {
@@ -51,28 +51,28 @@ impl<T: Debug> StreamVec<T> {
         }
     }
 }
-impl<T: Debug> Writer<T> {
-    pub fn new() -> Writer<T> {
+impl Writer {
+    pub fn new() -> Writer {
         Writer {
             state:  Glue::None,
             stream: StreamVec::new(),
         }
     }
-    fn dup(&self) -> Writer<T> {
+    fn dup(&self) -> Writer {
         Writer {
             stream: StreamVec::new(),
             ..      *self
         }
     }
     
-    pub fn finish(mut self) -> StreamVec<T> {
+    pub fn finish(mut self) -> StreamVec {
         self.write_glue(Glue::any());
         self.stream
     }
     
-    fn push_branch<I>(&mut self, mut ways: I) where I: Iterator<Item=StreamVec<T>> {
+    fn push_branch<I>(&mut self, mut ways: I) where I: Iterator<Item=StreamVec> {
         if let Some(default) = ways.next() {
-            let mut others: Vec<StreamVec<T>> = ways.collect();
+            let mut others: Vec<StreamVec> = ways.collect();
             
             if others.len() == 0 {
                 self.stream.0.extend(default.0);
@@ -107,17 +107,20 @@ impl<T: Debug> Writer<T> {
         }
     }
     
-    fn push(&mut self, left: Glue, right: Glue, entry: Entry<T>) {
+    fn push(&mut self, left: Glue, right: Glue, entry: Entry) {
         self.write_glue(left);
         self.stream.push(entry);
         self.state = right;
     }
 
-    pub fn word(&mut self, left: Glue, right: Glue, key: WordKey, measure: FlexMeasure, data: T) {
-        self.push(left, right, Entry::Word(key, measure, data));
+    pub fn word(&mut self, left: Glue, right: Glue, key: WordKey, measure: FlexMeasure, font: Font, tag: Tag) {
+        self.push(left, right, Entry::Word(key, measure, font, tag));
     }
     pub fn space(&mut self, left: Glue, right: Glue, measure: FlexMeasure, breaking: bool) {
         self.push(left, right, Entry::Space(breaking, measure));
+    }
+    pub fn object(&mut self, left: Glue, right: Glue, key: ObjectKey, measure: FlexMeasure, tag: Tag) {
+        self.push(left, right, Entry::Object(key, measure, tag));
     }
     
     #[inline(always)]
@@ -125,7 +128,7 @@ impl<T: Debug> Writer<T> {
         self.state |= glue;
     }
 
-    pub fn branch(&mut self, mut f: impl FnMut(&mut BranchGenerator<T>))
+    pub fn branch(&mut self, mut f: impl FnMut(&mut BranchGenerator))
     {
         let mut branches = {
             let mut gen = BranchGenerator {

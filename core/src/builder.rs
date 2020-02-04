@@ -1,4 +1,4 @@
-use crate::{Storage, Sequence, TypeKey, Item, Type, Document};
+use crate::{Storage, Sequence, TypeKey, Item, Type, Document, Object};
 
 pub struct ContentBuilder<'a> {
     storage: &'a mut Storage,
@@ -41,6 +41,11 @@ impl<'a> ContentBuilder<'a> {
             parent: self
         }
     }
+    pub fn object(mut self, object: Object) -> Self {
+        let key = self.storage.insert_object(object);
+        self.items.push(Item::Object(key));
+        self
+    }
     pub fn finish(self) -> Document {
         Document::new(Sequence::new(self.document_key, self.items))
     }
@@ -55,6 +60,12 @@ impl<'a> TextBuilder<'a> {
     pub fn word(mut self, w: &str) -> Self {
         let word = self.parent.storage.insert_word(w);
         self.nodes.push(Item::Word(word));
+        self
+    }
+
+    pub fn object(mut self, object: Object) -> Self {
+        let key = self.parent.storage.insert_object(object);
+        self.nodes.push(Item::Object(key));
         self
     }
 

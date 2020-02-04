@@ -45,20 +45,29 @@ impl FlexMeasure {
     /// Or None when there is none.
     // m.at(m.factor(w).unwrap()) == w
     pub fn factor(&self, width: Length) -> Option<f32> {
-        if width < self.shrink {
+        debug_assert!(self.shrink <= self.width);
+        debug_assert!(self.width <= self.stretch);
+        if width < self.shrink || width > self.stretch {
             return None;
         }
         
         if width == self.width {
-            Some(1.0)
+            Some(0.0)
         } else {
             let delta = width - self.width; // d > 0 => stretch, d < 0 => shrink
-            let diff = if delta >= Length::zero() {
-                self.stretch - self.width
+            if delta >= Length::zero() {
+                if self.stretch > self.width {
+                    Some(delta / (self.stretch - self.width))
+                } else {
+                    Some(1.0)
+                }
             } else {
-                self.width - self.shrink
-            };
-            Some(delta / diff)
+                if self.shrink < self.width {
+                    Some(delta / (self.width - self.shrink))
+                } else {
+                    Some(-1.0)
+                }
+            }
         }
     }
     

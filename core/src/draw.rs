@@ -11,9 +11,9 @@ use pathfinder_geometry::{
     transform2d::Transform2F
 };
 use pathfinder_content::{
-    outline::{Contour, Outline},
-    color::ColorU
+    outline::{Contour, Outline}
 };
+use pathfinder_color::ColorU;
 use pathfinder_renderer::{
     scene::{Scene, PathObject},
     paint::{Paint, PaintId}
@@ -36,8 +36,8 @@ struct Layout {
 
 pub struct Page {
     scene: Scene,
-    tags: Vec<(f32, Vec<(f32, usize)>)>,
-    positions: HashMap<usize, Vector2F>
+    tags: Vec<(f32, Vec<(f32, Tag)>)>,
+    positions: HashMap<Tag, RectF>
 }
 impl Page {
     pub fn scene(&self) -> &Scene {
@@ -49,15 +49,15 @@ impl Page {
             if y > p.y() {
                 for &(x, tag) in line.iter().rev() {
                     if x <= p.x() {
-                        return Some((Tag(tag), Vector2F::new(x, y)));
+                        return Some((tag, Vector2F::new(x, y)));
                     }
                 }
             }
         }
         None
     }
-    pub fn position(&self, Tag(idx): Tag) -> Option<Vector2F> {
-        self.positions.get(&idx).cloned()
+    pub fn position(&self, tag: Tag) -> Option<RectF> {
+        self.positions.get(&tag).cloned()
     }
 }
 
@@ -80,14 +80,48 @@ impl Cache {
     pub fn render(&mut self, storage: &Storage, target: &Target, document: &Document, design: &Design) -> Vec<Page> {
         let mut writer = Writer::new();
         let type_design = design.default();
-        let context = Context {
-            storage,
-            target,
-            type_design,
-            document,
-            design
-        };
-        self.render_sequence(&mut writer, &context, document.root(), 0);
+        for (tag, r) in document.items(..) {
+            match r {
+                FindResult::SequenceStart(s) => {
+                    let type_design = design.get_type_or_default(s.typ());
+                    match type_design.display {
+                        Display::Block => writer.promote(Glue::newline()),
+                        Display::Paragraph(indent) => writer.space(Glue::newline(), Glue::hfill(), FlexMeasure::fixed(indent), false),
+                        _ => {}
+                    }
+                }
+                FindResult::SequenceEnd(s) => {
+                    let type_design = design.get_type_or_default(s.typ());
+                    match type_design.display {
+                        Display::Block => writer.promote(Glue::hfill()),
+                        Display::Paragraph(_) => writer.promote(Glue::hfill()),
+                        _ => {}
+                    }
+                }
+                FindResult::Item(s, &Item::Word(key)) => {
+                    let type_design = design.get_type_or_default(s.typ());
+                    let font = type_design.font;
+                    let space = Glue::space(type_design.word_space);
+                    let width = self.word_layout(key, storage, font).advance.x();
+                    let measure = FlexMeasure::fixed_box(Length::mm(width), type_design.line_height);
+
+                    writer.word(space, space, key, measure, font, tag);
+                }
+                FindResult::Item(s, &Item::Object(key)) => {
+                    let obj = storage.get_object(key);
+                    let ctx = ObjectContext {
+                        target,
+                        storage,
+                        type_design
+                    };
+                    let size = obj.size(ctx);
+                    dbg!(size);
+                    writer.object(Glue::any(), Glue::any(), key, size, tag);
+                }
+                _ => {}
+            }
+        }
+        //self.render_sequence(&mut writer, &context, document.root(), 0);
 
         let mut pages = Vec::new();
         let stream = writer.finish();
@@ -113,19 +147,30 @@ impl Cache {
             let mut positions = HashMap::new();
             let content_box: RectF = target.content_box.into();
             for (y, line) in column {
+                let line_height = line.height();
                 let mut line_items = Vec::new();
-                for (x, item, &(font, idx)) in line {
+                for (x, item, tag) in line {
                     let p = content_box.origin() + Vector2F::new(x.value as f32, y.value as f32);
-                    match item {
-                        LayoutItem::Word(key) => {
-                            let mut outline = self.render_word(key, storage, *font);
+                    let width = match item {
+                        LayoutItem::Word(key, font) => {
+                            let (mut outline, advance) = self.render_word(key, storage, font);
                             outline.transform(&Transform2F::from_translation(p));
-                            scene.push_path(PathObject::new(outline, paint, format!("{}", idx)));
+                            scene.push_path(PathObject::new(outline, paint, String::new()));
+                            advance.x()
                         }
-                        _ => {}
-                    }
-                    line_items.push((x.value + content_box.origin().x(), idx));
-                    positions.insert(idx, p);
+                        LayoutItem::Object(key, width) => {
+                            let ctx = ObjectContext {
+                                target,
+                                storage,
+                                type_design
+                            };
+                            storage.get_object(key).draw(ctx, p, width, line_height, &mut scene);
+                            width.value
+                        }
+                        _ => 0.0
+                    };
+                    line_items.push((x.value + content_box.origin().x(), tag));
+                    positions.insert(tag, RectF::new(p, Vector2F::new(width, line_height.value)));
                 }
                 line_indices.push((y.value + content_box.origin().y(), line_items));
             }
@@ -137,47 +182,10 @@ impl Cache {
         pages
     }
 
-    fn render_sequence<'a>(&mut self, writer: &mut Writer<(&'a Font, usize)>, ctx: &Context<'a>, seq: &Sequence, mut idx: usize) {
-        let type_design = ctx.design.get_type(seq.typ()).unwrap_or(ctx.design.default());
-        let inner_context = Context {
-            type_design,
-            .. *ctx
-        };
-        match type_design.display {
-            Display::Block => writer.promote(Glue::newline()),
-            Display::Paragraph(indent) => writer.space(Glue::newline(), Glue::hfill(), FlexMeasure::fixed(indent), false),
-            _ => {}
-        }
-        for item in seq.items() {
-            self.render_item(writer, &inner_context, item, idx);
-            idx += item.num_nodes();
-        }
-        match type_design.display {
-            Display::Block => writer.promote(Glue::hfill()),
-            Display::Paragraph(_) => writer.promote(Glue::hfill()),
-            _ => {}
-        }
-    }
-    fn render_item<'a>(&mut self, writer: &mut Writer<(&'a Font, usize)>, ctx: &Context<'a>, item: &Item, idx: usize) {
-        assert_eq!(ctx.document.find(Tag(idx)).unwrap().1 as *const _, item as *const _);
-
-        match *item {
-            Item::Word(key) => {
-                let font = &ctx.type_design.font;
-                let space = Glue::space(ctx.type_design.word_space);
-                let width = self.word_layout(key, &ctx.storage, *font).advance.x();
-                let measure = FlexMeasure::fixed_box(Length::mm(width), ctx.type_design.line_height);
-
-                writer.word(space, space, key, measure, (font, idx));
-            }
-            Item::Symbol(_) => {}
-            Item::Sequence(ref seq) => self.render_sequence(writer, ctx, seq, idx+1)
-        }
-    }
     pub fn get_position_on_page(&self, storage: &Storage, design: &Design, document: &Document, page: &Page, tag: Tag, byte_pos: usize) -> Option<(Vector2F, TypeKey)> {
         match document.find(tag)? {
-            (seq, &Item::Word(key)) => {
-                let item_pos = page.position(tag)?;
+            FindResult::Item(seq, &Item::Word(key)) => {
+                let rect = page.position(tag)?;
                 let type_design = design.get_type_or_default(seq.typ());
                 let word = storage.get_word(key);
                 let face = storage.get_font_face(type_design.font.font_face);
@@ -186,19 +194,19 @@ impl Cache {
 
                 for (&n, &(gid, offset)) in grapheme_indices.iter().zip(layout.glyphs.iter()) {
                     if n >= byte_pos {
-                        return Some((item_pos + offset.vector, seq.typ()));
+                        return Some((rect.lower_left() + offset.vector, seq.typ()));
                     }
                 }
 
                 // point to the end
-                return Some((item_pos + layout.advance, seq.typ()));
+                return Some((rect.lower_left() + layout.advance, seq.typ()));
             }
-            (parent, &Item::Sequence(ref seq)) => {
-                for (tag, item) in document.items(tag .. tag + seq.num_nodes()) {
-                    match *item {
-                        Item::Word(_) => {
-                            let item_pos = page.position(tag)?;
-                            return Some((item_pos, seq.typ()));
+            FindResult::SequenceStart(ref seq) => {
+                for (tag, r) in document.items(tag .. tag + seq.num_nodes()) {
+                    match r {
+                        FindResult::Item(_, Item::Word(_)) => {
+                            let rect = page.position(tag)?;
+                            return Some((rect.lower_left(), seq.typ()));
                         }
                         _ => {}
                     }
@@ -208,22 +216,18 @@ impl Cache {
             _ => None
         }
     }
-    pub fn get_rect_on_page(&self, storage: &Storage, design: &Design, document: &Document, page: &Page, tag: Tag) -> Option<(RectF, TypeKey)> {
+    pub fn get_rect_on_page(&self, document: &Document, page: &Page, tag: Tag) -> Option<(RectF, TypeKey)> {
         // first step is to locate the item on the page
-        let item_pos = page.position(tag)?;
+        let rect = page.position(tag)?;
 
         // then get the layout of the word
-        if let (seq, &Item::Word(key)) = document.find(tag)? {
-            let type_design = design.get_type_or_default(seq.typ());
-            let layout = self.layout_cache.get(&(type_design.font, key)).unwrap();
-
-            // point to the end
-            return Some((RectF::new(item_pos, layout.advance), seq.typ()));
+        if let FindResult::Item(seq, _) = document.find(tag)? {
+            return Some((rect, seq.typ()));
         }
         None
     }
     pub fn find(&self, storage: &Storage, design: &Design, document: &Document, offset: f32, tag: Tag) -> Option<(Vector2F, usize, TypeKey)> {
-        if let (seq, &Item::Word(key)) = document.find(tag)? {
+        if let FindResult::Item(seq, &Item::Word(key)) = document.find(tag)? {
             let type_design = design.get_type_or_default(seq.typ());
             let word = storage.get_word(key);
             let face = storage.get_font_face(type_design.font.font_face);
@@ -276,7 +280,7 @@ impl Cache {
         }
     }
 
-    fn render_word(&mut self, word: WordKey, storage: &Storage, font: Font) -> Outline {
+    fn render_word(&mut self, word: WordKey, storage: &Storage, font: Font) -> (Outline, Vector2F) {
         let layout = self.word_layout(word, storage, font);
         let font = storage.get_font_face(font.font_face);
 
@@ -290,6 +294,6 @@ impl Cache {
                 }
             }
         }
-        word_outline
+        (word_outline, layout.advance)
     }
 }

@@ -1,5 +1,5 @@
 use std::fmt::{self, Debug};
-use crate::{WordKey, SymbolKey};
+use crate::{WordKey, SymbolKey, ObjectKey, Font, Tag};
 use crate::units::Length;
 
 // private mods
@@ -38,19 +38,21 @@ pub struct Style {
 
 /// used as input to the line breaking algorithm
 #[derive(Debug)]
-enum Entry<T> {
+enum Entry {
     /// A single word (sequence of glyphs)
-    Word(WordKey, FlexMeasure, T),
+    Word(WordKey, FlexMeasure, Font, Tag),
     
     /// Punctuation ('"', ',', '.', '-', …)
     /// is positioned in the margin if at the beginning or end of the line
-    Punctuation(SymbolKey, FlexMeasure, T),
+    Punctuation(SymbolKey, FlexMeasure, Font, Tag),
     
     /// Continue on the next line (fill)
     Linebreak(bool),
     
     /// (breaking, measure)
     Space(bool, FlexMeasure),
+
+    Object(ObjectKey, FlexMeasure, Tag),
     
     /// Somtimes there are different possiblites of representing something.
     /// A Branch solves this by splitting the stream in two parts.
@@ -73,18 +75,19 @@ enum Entry<T> {
 
 /// result of the linebreaking algorithm
 pub enum Item {
-    Word(WordKey),
-    Symbol(SymbolKey)
+    Word(WordKey, Font),
+    Symbol(SymbolKey, Font),
+    Object(ObjectKey, Length),
 }
 
 #[derive(Debug)]
-pub struct StreamVec<T>(Vec<Entry<T>>);
-impl<T> StreamVec<T> {
+pub struct StreamVec(Vec<Entry>);
+impl StreamVec {
     pub fn new() -> Self {
         StreamVec(vec![])
     }
     #[inline]
-    fn push(&mut self, entry: Entry<T>) {
+    fn push(&mut self, entry: Entry) {
         self.0.push(entry);
     }
 }
