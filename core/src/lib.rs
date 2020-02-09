@@ -15,12 +15,14 @@ mod gen;
 mod text;
 mod storage;
 mod object;
+mod document;
 
 pub use storage::*;
 pub use content::*;
 pub use layout::FlexMeasure;
 pub use units::*;
 pub use object::*;
+pub use document::*;
 
 #[derive(Serialize, Deserialize)]
 #[derive(Debug, Copy, Clone)]

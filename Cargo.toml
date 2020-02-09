@@ -6,13 +6,6 @@ members = [
     "web",
 ]
 
-[profile.dev]
-opt-level = 1
-
-[profile.release]
-lto = "fat"
-panic = "abort"
-
 [patch."https://github.com/s3bk/winit"]
 winit = { path = "../winit", features = ["web-sys"]}
 

@@ -40,8 +40,8 @@ pub fn markdown_design(storage: &mut Storage) -> Design {
                 },
                 word_space: FlexMeasure {
                     height:  Length::zero(),
-                    shrink:  Length::mm(0.20 * size),
-                    width:   Length::mm(0.30 * size),
+                    shrink:  Length::mm(0.2 * size),
+                    width:   Length::mm(0.3 * size),
                     stretch: Length::mm(0.5 * size)
                 },
                 line_height: Length::mm(1.25 * size)

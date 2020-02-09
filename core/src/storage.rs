@@ -20,6 +20,7 @@ new_key_type! {
     pub struct FontFaceKey;
     pub struct TargetKey;
     pub struct ObjectKey;
+    pub struct SequenceKey;
 }
 
 #[derive(Serialize, Deserialize)]
@@ -28,7 +29,8 @@ pub struct Storage {
     symbols: IndexSet<Symbol>,
     types:   IndexMap<String, Type>,
     fonts:   SlotMap<FontFaceKey, FontFace>,
-    objects: SlotMap<ObjectKey, Object>
+    objects: SlotMap<ObjectKey, Object>,
+    sequences: SlotMap<SequenceKey, Sequence>,
 }
 
 impl Storage {
@@ -55,6 +57,9 @@ impl Storage {
         let (idx, _) = self.symbols.insert_full(Symbol { text: text.to_owned() });
         SymbolKey(idx)
     }
+    pub fn insert_sequenc(&mut self, seq: Sequence) -> SequenceKey {
+        self.sequences.insert(seq)
+    }
     pub fn insert_type(&mut self, key: impl Into<String>, typ: Type) -> TypeKey {
         let (idx, _) = self.types.insert_full(key.into(), typ);
         TypeKey(idx)
@@ -65,7 +70,9 @@ impl Storage {
     pub fn insert_object(&mut self, obj: Object) -> ObjectKey {
         self.objects.insert(obj)
     }
-
+    pub fn get_item(&self, tag: Tag) -> Option<&Item> {
+        self.sequences.get(tag.0).and_then(|seq| seq.items().get(tag.1))
+    }
     pub fn get_word(&self, key: WordKey) -> &Word {
         self.words.get_index(key.0).unwrap()
     }
@@ -84,5 +91,11 @@ impl Storage {
     pub fn get_type(&self, key: TypeKey) -> (&str, &Type) {
         let (name, typ) = self.types.get_index(key.0).unwrap();
         (name.as_str(), typ)
+    }
+    pub fn get_sequence(&self, key: SequenceKey) -> &Sequence {
+        self.sequences.get(key).unwrap()
+    }
+    pub fn get_sequence_mut(&mut self, key: SequenceKey) -> &mut Sequence {
+        self.sequences.get_mut(key).unwrap()
     }
 }

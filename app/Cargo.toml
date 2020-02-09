@@ -6,6 +6,8 @@ edition = "2018"
 
 [features]
 pan = []
+import_markdown = ["pulldown-cmark"]
+export_docx = ["docx"]
 
 [dependencies]
 grafeia_core = { path = "../core" }
@@ -25,7 +27,8 @@ unicode-segmentation = "1.6.0"
 bincode = "*"
 pathfinder_view = { git = "https://github.com/s3bk/pathfinder_view" }
 log = "0.4.8"
-docx = "*"
+docx = { version = "*", optional = true }
+pulldown-cmark = { version = "*", optional = true }
 
 [target.'cfg(target_arch="wasm32")'.dependencies]
 web-sys = { version = "*", features = ["Storage", "Window"] }

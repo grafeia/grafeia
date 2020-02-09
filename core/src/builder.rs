@@ -1,4 +1,5 @@
 use crate::{Storage, Sequence, TypeKey, Item, Type, Document, Object};
+use std::rc::Rc;
 
 pub struct ContentBuilder<'a> {
     storage: &'a mut Storage,
@@ -12,16 +13,16 @@ impl<'a> ContentBuilder<'a> {
     pub fn new(storage: &'a mut Storage) -> ContentBuilder<'a> {
         ContentBuilder {
             para_key: storage.insert_type(
-                "paragraph".into(),
-                Type { description: "A Paragraph".into() }
+                "paragraph",
+                Type::new("A Paragraph")
             ),
             chapter_key: storage.insert_type(
-                "chapter".into(),
-                Type { description: "A Chapter".into() }
+                "chapter",
+                Type::new("A Chapter")
             ),
             document_key: storage.insert_type(
-                "document".into(),
-                Type { description: "The Document".into() }
+                "document",
+                Type::new("The Document")
             ),
             storage,
             items: vec![]
@@ -71,7 +72,7 @@ impl<'a> TextBuilder<'a> {
 
     pub fn finish(mut self) -> ContentBuilder<'a> {
         let seq = Sequence::new(self.typ, self.nodes);
-        self.parent.items.push(Item::Sequence(Box::new(seq)));
+        self.parent.items.push(Item::Sequence(Rc::new(seq)));
         self.parent
     }
 }

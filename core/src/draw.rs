@@ -93,8 +93,7 @@ impl Cache {
                 FindResult::SequenceEnd(s) => {
                     let type_design = design.get_type_or_default(s.typ());
                     match type_design.display {
-                        Display::Block => writer.promote(Glue::hfill()),
-                        Display::Paragraph(_) => writer.promote(Glue::hfill()),
+                        Display::Block | Display::Paragraph(_) => writer.promote(Glue::hfill()),
                         _ => {}
                     }
                 }

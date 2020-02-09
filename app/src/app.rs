@@ -56,6 +56,31 @@ macro_rules! get {
 
 const VERSION: (u16, u16) = (0, 3);
 
+fn default_target() -> Target {
+    Target {
+        description: "test target".into(),
+        content_box: Rect {
+            left: Length::mm(10.),
+            width: Length::mm(150.),
+            top: Length::mm(10.),
+            height: Length::mm(220.)
+        },
+        media_box: Rect {
+            left: Length::mm(-3.),
+            width: Length::mm(176.),
+            top: Length::mm(-3.),
+            height: Length::mm(246.)
+        },
+        trim_box: Rect {
+            left: Length::mm(0.),
+            width: Length::mm(170.),
+            top: Length::mm(0.),
+            height: Length::mm(240.)
+        },
+        page_color: Color
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct App {
     storage: Storage,
@@ -101,28 +126,7 @@ impl App {
             .object(Object::Svg(SvgObject::new(Size::FitWidth, include_bytes!("../../data/Ghostscript_Tiger.svg")[..].into())))
             .finish();
         
-        let target = Target {
-            description: "test target".into(),
-            content_box: Rect {
-                left: Length::mm(10.),
-                width: Length::mm(150.),
-                top: Length::mm(10.),
-                height: Length::mm(220.)
-            },
-            media_box: Rect {
-                left: Length::mm(-3.),
-                width: Length::mm(176.),
-                top: Length::mm(-3.),
-                height: Length::mm(246.)
-            },
-            trim_box: Rect {
-                left: Length::mm(0.),
-                width: Length::mm(170.),
-                top: Length::mm(0.),
-                height: Length::mm(240.)
-            },
-            page_color: Color
-        };
+        
 
         info!("reading font");
         let font_face = storage.insert_font_face(
@@ -183,6 +187,7 @@ impl App {
             }
         );
 
+        let target = default_target();
         let mut cache = Cache::new();
         info!("rendering document");
         let pages = cache.render(&storage, &target, &document, &design);
@@ -199,8 +204,37 @@ impl App {
         }
     }
 
-    pub fn export(&self) -> (Vec<u8>, &'static str) {
-        (crate::export::export_docx(&self.storage, &self.document, &self.design), "docx")
+    #[cfg(feature="import_markdown")]
+    pub fn import_markdown(file: &str) -> Self {
+        let mut storage = Storage::new();
+        let data = std::fs::read(file).unwrap();
+        let text = String::from_utf8(data).unwrap();
+
+        use crate::import::markdown;
+        markdown::define_types(&mut storage);
+        let design = markdown::markdown_design(&mut storage);
+        let document = markdown::import_markdown(&mut storage, &text);
+
+        let target = default_target();
+        let mut cache = Cache::new();
+        info!("rendering document");
+        let pages = cache.render(&storage, &target, &document, &design);
+        info!("App ready");
+
+        App {
+            cache,
+            storage,
+            target,
+            document,
+            design,
+            pages,
+            cursor: None
+        }
+    }
+
+    #[cfg(feature="export_docx")]
+    pub fn export_docx(&self) -> Vec<u8> {
+        crate::export::docx::export_docx(&self.storage, &self.document, &self.design)
     }
 
     pub fn store(&self) {

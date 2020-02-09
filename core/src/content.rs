@@ -23,19 +23,16 @@ use std::fmt::{self, Debug};
 use std::borrow::Borrow;
 use std::io;
 use std::path::Path;
-use std::ops::{Deref, RangeBounds};
+use std::ops::{Deref};
+use std::rc::Rc;
 use font;
 use pathfinder_content::outline::Outline;
-use pathfinder_renderer::scene::Scene;
-use pathfinder_geometry::rect::RectF;
 use serde::{Serialize, Deserialize, Serializer};
 
 use crate::layout::FlexMeasure;
 use crate::{
-    units::{Length, Bounds, Rect},
+    units::{Length, Rect},
     Display, Color,
-    gen::GenIter,
-    Object
 };
 use crate::storage::{WordKey, SymbolKey, TargetKey, TypeKey, FontFaceKey, Storage, ObjectKey};
 
@@ -44,6 +41,11 @@ use crate::storage::{WordKey, SymbolKey, TargetKey, TypeKey, FontFaceKey, Storag
 #[derive(Serialize, Deserialize)]
 pub struct Type {
     pub description: String,
+}
+impl Type {
+    pub fn new(description: impl Into<String>) -> Self {
+        Type { description: description.into() }
+    }
 }
 
 #[derive(Deserialize)]
@@ -102,49 +104,36 @@ impl Borrow<str> for Word {
 
 
 #[derive(Serialize, Deserialize)]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Item {
     Word(WordKey),
     Symbol(SymbolKey),
-    Sequence(Box<Sequence>), // want a box here to keep the type size down
+    Sequence(SequenceKey),
     Object(ObjectKey)
-}
-impl Item {
-    pub fn num_nodes(&self) -> usize {
-        match *self {
-            Item::Sequence(ref seq) => seq.num_nodes + 2,
-            _ => 1,
-        }
-    }
 }
 
 #[derive(Serialize, Deserialize)]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Attribute;
 
 #[derive(Serialize, Deserialize)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Tag(pub(crate) usize);
-
-impl std::ops::Add<usize> for Tag {
-    type Output = Tag;
-    fn add(self, rhs: usize) -> Tag {
-        Tag(self.0 + rhs)
-    }
+pub enum Tag {
+    Within(SequenceKey, usize),
+    End(SequenceKey)
 }
 
 #[derive(Serialize, Deserialize)]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Sequence {
-    typ:   TypeKey,
-    items: Vec<Item>,
-    attrs: Vec<Attribute>,
-    num_nodes: usize
+    pub(crate) typ:   TypeKey,
+    pub(crate) items: Vec<Item>,
+    pub(crate) attrs: Vec<Attribute>
 }
 impl Sequence {
     pub fn new(typ: TypeKey, items: Vec<Item>) -> Sequence {
         let num_nodes = items.iter().map(|item| item.num_nodes()).sum();
-        Sequence { typ, items, attrs: vec![], num_nodes }
+        Sequence { typ, items, attrs: vec![] }
     }
     pub fn items(&self) -> &[Item] {
         &self.items
@@ -152,241 +141,7 @@ impl Sequence {
     pub fn typ(&self) -> TypeKey {
         self.typ
     }
-    pub fn num_nodes(&self) -> usize {
-        self.num_nodes
-    }
-
-    fn apply(&mut self, mut idx: usize, f: impl FnOnce(&mut Sequence, usize)) {
-        'a: loop {
-            if idx == 0 {
-                break;
-            }
-            idx -= 1;
-
-            for (i, item) in self.items.iter_mut().enumerate() {
-                if idx == 0 {
-                    f(self, i);
-                    break 'a;
-                }
-                match item {
-                    Item::Sequence(ref mut seq) => {
-                        if idx < seq.num_nodes + 2 {
-                            seq.apply(idx, f);
-                            break 'a;
-                        }
-                        idx -= seq.num_nodes + 2;
-                    }
-                    _ => {
-                        idx -= 1;
-                    }
-                }
-            }
-
-            if idx == 0 {
-                f(self, self.items.len());
-            }
-            break;
-        }
-        self.num_nodes = self.items.iter().map(|item| item.num_nodes()).sum();
-    }
 }
-#[derive(Serialize, Deserialize)]
-#[derive(Debug)]
-pub struct Document {
-    root: Sequence
-}
-#[derive(Debug)]
-pub enum FindResult<'a> {
-    SequenceStart(&'a Sequence),
-    SequenceEnd(&'a Sequence),
-    Item(&'a Sequence, &'a Item)
-}
-impl Document {
-    pub fn new(root: Sequence) -> Self {
-        let mut doc = Document { root };
-        doc.validate();
-        doc
-    }
-    // parent and item
-    pub fn find(&self, Tag(mut idx): Tag) -> Option<FindResult> {
-        let mut seq = &self.root;
-        'a: loop {
-            if idx == 0 {
-                return Some(FindResult::SequenceStart(seq));
-            }
-            idx -= 1;
-
-            for item in seq.items.iter() {
-                match *item {
-                    Item::Sequence(ref s) => {
-                        if idx < s.num_nodes + 2 {
-                            seq = s;
-                            continue 'a;
-                        }
-                        idx -= s.num_nodes + 1;
-                    }
-                    _ if idx == 0 => {
-                        return Some(FindResult::Item(seq, item));
-                    }
-                    _ =>  {}
-                }
-                idx -= 1;
-            }
-            if idx == 0 {
-                return Some(FindResult::SequenceEnd(seq));
-            }
-            return None;
-        }
-    }
-    pub fn root(&self) -> &Sequence {
-        &self.root
-    }
-    pub fn print(&self) {
-        let mut level = 0;
-        for (idx, r) in self.items(..) {
-            println!("{:?} {:?}", idx, r);
-            match r {
-                FindResult::SequenceStart(_) => level += 1,
-                FindResult::SequenceEnd(_) => level -= 1,
-                FindResult::Item(_, _) => {}
-            }
-        }
-    }
-    #[cfg(not(debug_assertions))]
-    pub fn validate(&mut self) {}
-    
-    #[cfg(debug_assertions)]
-    pub fn validate(&mut self) {
-        self.print();
-        let mut items = vec![];
-        for (tag, r1) in self.items(..) {
-            let r2 = self.find(tag).unwrap();
-            debug!("validating {:?}", tag);
-            debug!("r1 = {:?}", r1);
-            debug!("r2 = {:?}", r2);
-            match (r1, r2) {
-                (FindResult::SequenceStart(s1), FindResult::SequenceStart(s2)) => assert_eq!(s1 as *const _, s2 as *const _),
-                (FindResult::SequenceEnd(s1), FindResult::SequenceEnd(s2))  => assert_eq!(s1 as *const _, s2 as *const _),
-                (FindResult::Item(s1, i1), FindResult::Item(s2, i2)) => {
-                    assert_eq!(s1 as *const _, s2 as *const _);
-                    assert_eq!(i1 as *const _, i2 as *const _);
-                    items.push((tag, i1 as *const _));
-                }
-                _ => panic!()
-            }
-        }
-        for (tag, item_ptr) in items {
-            self.root.apply(tag.0, |seq, i| {
-                if let Some(item) = seq.items.get(i) {
-                    debug!("[{}] -> {:?}", i, item);
-                    assert_eq!(item as *const _, item_ptr);
-                }
-            });
-        }
-    }
-
-    pub fn replace(&mut self, Tag(idx): Tag, new_item: Item) {
-        self.root.apply(idx, |seq, i| seq.items[i] = new_item);
-        self.validate();
-    }
-
-    pub fn remove(&mut self, Tag(idx): Tag) {
-        self.root.apply(idx, |seq, i| { seq.items.remove(i); });
-        self.validate();
-    }
-
-    pub fn insert(&mut self, Tag(idx): Tag, new_item: Item) {
-        self.root.apply(idx, |seq, i| seq.items.insert(i, new_item));
-        self.validate();
-    }
-
-    pub fn get_previous_tag(&self, Tag(idx): Tag) -> Option<Tag> {
-        if idx > 0 {
-            Some(Tag(idx - 1))
-        } else {
-            None
-        }
-    }
-    pub fn get_next_tag(&self, Tag(idx): Tag) -> Option<Tag> {
-        if idx + 1 < self.root.num_nodes {
-            Some(Tag(idx + 1))
-        } else {
-            None
-        }
-    }
-    pub fn items(&self, range: impl RangeBounds<Tag>) -> impl Iterator<Item=(Tag, FindResult)> {
-        use std::ops::Bound;
-        let start = match range.start_bound() {
-            Bound::Included(&Tag(idx)) => idx,
-            Bound::Excluded(&Tag(idx)) => idx + 1,
-            Bound::Unbounded => 0
-        };
-        let end = match range.end_bound() {
-            Bound::Included(&Tag(idx)) => idx + 1,
-            Bound::Excluded(&Tag(idx)) => idx,
-            Bound::Unbounded => self.root.num_nodes + 2
-        };
-
-        GenIter::new(move || {
-            let mut stack = vec![];
-            let mut seq = &self.root;
-            let mut idx = 0;
-            let mut i = 0;
-
-            yield (Tag(idx), FindResult::SequenceStart(seq));
-            idx += 1;
-
-            loop {
-                let item = match seq.items.get(i) {
-                    Some(item) => item,
-                    None => {
-                        if idx >= end {
-                            return;
-                        }
-                        yield (Tag(idx), FindResult::SequenceEnd(seq));
-
-                        if let Some((s, j)) = stack.pop() {
-                            seq = s;
-                            i = j + 1;
-                            idx += 1;
-
-                            continue;
-                        } else {
-                            return;
-                        }
-                    }
-                };
-                
-                if idx >= end {
-                    return;
-                }
-                
-                match *item {
-                    Item::Sequence(ref s) => {
-                        if idx >= start {
-                            yield (Tag(idx), FindResult::SequenceStart(s));
-                        }
-                        idx += 1;
-                        if idx < end {
-                            stack.push((seq, i));
-                            seq = s;
-                            i = 0;
-                            continue;
-                        }
-                    }
-                    _ => {
-                        if idx >= start {
-                            yield (Tag(idx), FindResult::Item(seq, item));
-                        }
-                        idx += 1;
-                    }
-                }
-                i += 1;
-            }
-        })
-    }
-}
-
 
 
 #[derive(Serialize, Deserialize)]

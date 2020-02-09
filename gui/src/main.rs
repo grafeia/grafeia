@@ -6,9 +6,14 @@ pub static mut THE_ALLOC: System = System;
 
 fn main() {
     env_logger::init();
-    let app = App::load().unwrap_or_else(App::build);
-    let (data, ext) = app.export();
-    std::fs::write(&format!("document.{}", ext), data);
+    let app = if let Some(file) = std::env::args().nth(1) {
+        App::import_markdown(&file)
+    } else {
+        App::load().unwrap_or_else(App::build)
+    };
+
+    let data = app.export_docx();
+    std::fs::write("document.docx", data);
 
     pathfinder_view::show(app, pathfinder_view::Config {
         zoom: true,
