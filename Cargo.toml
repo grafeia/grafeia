@@ -4,6 +4,7 @@ members = [
     "gui",
     "app",
     "web",
+    "server"
 ]
 
 [patch."https://github.com/s3bk/winit"]

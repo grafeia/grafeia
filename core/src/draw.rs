@@ -139,7 +139,7 @@ impl Cache {
             
             scene.draw_path(pb.into_outline(), &style);
 
-            let paint = scene.push_paint(&Paint { color: ColorU { r: 0, g: 0, b: 0, a: 255 } });
+            let paint = scene.push_paint(&Paint::Color(ColorU { r: 0, g: 0, b: 0, a: 255 }));
             use crate::layout::Item as LayoutItem;
 
             let mut line_indices = Vec::new();
