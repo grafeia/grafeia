@@ -4,6 +4,7 @@ members = [
     "gui",
     "app",
     "web",
+    "server"
 ]
 
 [profile.dev]

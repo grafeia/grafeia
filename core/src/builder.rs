@@ -12,15 +12,15 @@ impl<'a> ContentBuilder<'a> {
     pub fn new(storage: &'a mut Storage) -> ContentBuilder<'a> {
         ContentBuilder {
             para_key: storage.insert_type(
-                "paragraph".into(),
+                "paragraph",
                 Type { description: "A Paragraph".into() }
             ),
             chapter_key: storage.insert_type(
-                "chapter".into(),
+                "chapter",
                 Type { description: "A Chapter".into() }
             ),
             document_key: storage.insert_type(
-                "document".into(),
+                "document",
                 Type { description: "The Document".into() }
             ),
             storage,

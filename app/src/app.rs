@@ -199,6 +199,7 @@ impl App {
         }
     }
 
+    #[cfg(feature = "export")]
     pub fn export(&self) -> (Vec<u8>, &'static str) {
         (crate::export::export_docx(&self.storage, &self.document, &self.design), "docx")
     }

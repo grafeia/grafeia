@@ -1,11 +1,50 @@
 use grafeia_app::app::App;
 use wasm_bindgen::prelude::*;
 use js_sys::Uint8Array;
+use std::panic;
+use log::Log;
+
+#[wasm_bindgen]
+extern {
+    fn ws_log(msg: &str);
+}
+
+fn panic_hook(info: &panic::PanicInfo) {
+    let mut msg = info.to_string();
+    ws_log(&msg);
+
+    console_error_panic_hook::hook(info);
+}
+
+pub fn log(record: &log::Record) {
+    ws_log(&format!("{:?} {}", record.level(), record.args()));
+}
+
+struct WebsocketLogger;
+
+impl Log for WebsocketLogger {
+    fn enabled(&self, metadata: &log::Metadata) -> bool {
+        metadata.level() <= log::max_level()
+    }
+
+    fn log(&self, record: &log::Record) {
+        if !self.enabled(record.metadata()) {
+            return;
+        }
+
+        log(record);
+    }
+
+    fn flush(&self) {}
+}
+
+static LOGGER: WebsocketLogger = WebsocketLogger;
 
 #[wasm_bindgen(start)]
 pub fn run() {
-    std::panic::set_hook(Box::new(console_error_panic_hook::hook));
-    console_log::init_with_level(log::Level::Debug);
+    panic::set_hook(Box::new(panic_hook));
+    log::set_logger(&LOGGER).unwrap();
+    log::set_max_level(log::LevelFilter::Info);
 }
 
 
