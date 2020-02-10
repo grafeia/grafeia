@@ -9,11 +9,7 @@ edition = "2018"
 opt-level = 1
 
 [dependencies]
-<<<<<<< HEAD
 grafeia_app = { path = "../app", features = ["import_markdown", "export_docx"] }
-=======
-grafeia_app = { path = "../app", features = ["export"] }
->>>>>>> master
 pathfinder_view = { git = "https://github.com/s3bk/pathfinder_view" }
 env_logger = "*"
 [profile.release]

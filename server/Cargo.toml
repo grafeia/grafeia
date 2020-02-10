@@ -1,0 +1,13 @@
+[package]
+name = "server"
+version = "0.1.0"
+authors = ["Sebastian K <s3bk@protonmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+warp = { version = "*", features = ["websocket"] }
+env_logger = "*"
+tokio = { version = "0.2", features = ["macros", "rt-threaded"] }
+futures = { version = "0.3", default-features = false }
