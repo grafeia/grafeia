@@ -163,7 +163,9 @@ pub fn import_markdown(storage: &mut Storage, text: &str) -> Document {
             Event::End(_) => {
                 let (parent_key, parent_items) = stack.pop().unwrap();
                 let inner_items = replace(&mut items, parent_items);
-                items.push(Item::Sequence(Box::new(Sequence::new(current_key, inner_items))));
+                let seq = Sequence::new(current_key, inner_items);
+                let key = storage.insert_sequence(seq);
+                items.push(Item::Sequence(key));
                 current_key = parent_key;
             }
             Event::Text(text) => {
@@ -171,11 +173,13 @@ pub fn import_markdown(storage: &mut Storage, text: &str) -> Document {
             }
             Event::Code(text) => {
                 let seq = Sequence::new(inline_code, text_items(storage, text.as_ref()).collect());
-                items.push(Item::Sequence(Box::new(seq)));
+                let key = storage.insert_sequence(seq);
+                items.push(Item::Sequence(key));
             }
             _ => {}
         }
     }
 
-    Document::new(Sequence::new(document, items))
+    let key = storage.insert_sequence(Sequence::new(document, items));
+    Document::new(&storage, key)
 }

@@ -249,7 +249,6 @@ impl App {
         }
         let data = &data[bincode::serialized_size(&VERSION).unwrap() as usize ..];
         let mut app: Self = bincode::deserialize(data).ok()?;
-        app.document.validate();
         info!("data decoded");
         app.render();
         Some(app)
@@ -263,65 +262,71 @@ impl App {
     fn render(&mut self) {
         self.pages = self.cache.render(&self.storage, &self.target, &self.document, &self.design);
     }
-    fn cursor_between(&mut self, left_tag: Tag, tag: Tag) -> Option<(Vector2F, TypeKey)> {
-        let left_rect = self.cache.get_rect_on_page(&self.document, &self.pages[0], left_tag)?.0;
-        let (rect, type_key) = self.cache.get_rect_on_page(&self.document, &self.pages[0], tag)?;
+    fn cursor_between(&mut self, left_tag: Tag, tag: Tag) -> Option<Vector2F> {
+        let left_rect = self.pages[0].position(left_tag)?;
+        let rect = self.pages[0].position(tag)?;
         let l = left_rect.lower_right();
         let r = rect.lower_left();
         if l.y() == r.y() {
-            Some(((l + r).scale(0.5), type_key))
+            Some((l + r).scale(0.5))
         } else {
             None
         }
     }
     fn set_cursor_to(&mut self, tag: Tag, pos: CursorPos) {
-        let r = get!(self.document.find(tag));
-        match (pos, r) {
-            (CursorPos::Before, FindResult::Item(_, _)) => {
-                if let Some((page_pos, type_key)) = self.document.get_previous_tag(tag).and_then(|left| self.cursor_between(left, tag)) {
+        let seq = self.storage.get_sequence(tag.seq);
+        let type_key = seq.typ();
+        
+        match tag.pos {
+            SequencePos::At(idx) => match (pos, &seq.items()[idx]) {
+                (CursorPos::Before, &Item::Sequence(key)) => {
+                    // end of sequence
+                    let seq = self.storage.get_sequence(key);
+                    let right = get!(self.document.get_next_tag(&self.storage, tag));
+                    let rect = get!(self.pages[0].position(right));
+                    let typ = self.design.get_type_or_default(type_key);
                     self.cursor = Some(Cursor {
+                        tag,
+                        pos,
+                        page_pos: rect.lower_right() - Vector2F::new(0.5 * typ.word_space.width.value, 0.0),
+                        type_key
+                    })
+                }
+                (CursorPos::Before, _) => {
+                    if let Some(page_pos) = self.document.get_previous_tag(&self.storage, tag).and_then(|left| self.cursor_between(left, tag)) {
+                        self.cursor = Some(Cursor {
+                            tag,
+                            pos,
+                            page_pos,
+                            type_key
+                        });
+                    } else if let Some(rect) = self.pages[0].position(tag) {
+                        let typ = self.design.get_type_or_default(type_key);
+                        self.cursor = Some(Cursor {
+                            tag,
+                            pos,
+                            page_pos: rect.lower_left() - Vector2F::new(0.5 * typ.word_space.width.value, 0.0),
+                            type_key
+                        });
+                    } else {
+                        self.cursor = None;
+                    }
+                }
+                (CursorPos::Within(text_pos), &Item::Word(_)) => {
+                    self.cursor = self.cache.get_position_on_page(&self.storage, &self.design, &self.document, &self.pages[0], tag, text_pos)
+                    .map(|page_pos| Cursor {
                         tag,
                         pos,
                         page_pos,
                         type_key
                     });
-                } else if let Some((rect, type_key)) = self.cache.get_rect_on_page(&self.document, &self.pages[0], tag) {
-                    let typ = self.design.get_type_or_default(type_key);
-                    self.cursor = Some(Cursor {
-                        tag,
-                        pos,
-                        page_pos: rect.lower_left() - Vector2F::new(0.5 * typ.word_space.width.value, 0.0),
-                        type_key
-                    });
-                } else {
-                    self.cursor = None;
                 }
+                _ => {}
             }
-            (CursorPos::Within(text_pos), FindResult::Item(_, &Item::Word(_))) => {
-                self.cursor = self.cache.get_position_on_page(&self.storage, &self.design, &self.document, &self.pages[0], tag, text_pos)
-                .map(|(page_pos, type_key)| Cursor {
-                    tag,
-                    pos,
-                    page_pos,
-                    type_key
-                });
-            }
-            (CursorPos::Before, FindResult::SequenceStart(s)) => {
+            SequencePos::End => {
                 // end of sequence
-                let right = get!(self.document.get_next_tag(tag));
-                let (rect, type_key) = get!(self.cache.get_rect_on_page(&self.document, &self.pages[0], right));
-                let typ = self.design.get_type_or_default(type_key);
-                self.cursor = Some(Cursor {
-                    tag,
-                    pos,
-                    page_pos: rect.lower_right() - Vector2F::new(0.5 * typ.word_space.width.value, 0.0),
-                    type_key
-                })
-            }
-            (CursorPos::Before, FindResult::SequenceEnd(s)) => {
-                // end of sequence
-                let left = get!(self.document.get_previous_tag(tag));
-                let (rect, type_key) = get!(self.cache.get_rect_on_page(&self.document, &self.pages[0], left));
+                let left = get!(self.document.get_previous_tag(&self.storage, tag));
+                let rect = get!(self.pages[0].position(left));
                 let typ = self.design.get_type_or_default(type_key);
                 self.cursor = Some(Cursor {
                     tag,
@@ -330,7 +335,6 @@ impl App {
                     type_key
                 })
             }
-            _ => {}
         }
 
         dbg!(self.cursor);
@@ -342,82 +346,87 @@ impl App {
     fn text_op(&mut self, op: TextOp) -> Option<(Tag, CursorPos)> {
         let cursor = self.cursor?;
 
-        match (cursor.pos, self.document.find(cursor.tag)?) {
-            (CursorPos::Within(n), FindResult::Item(_, &Item::Word(word_key))) => {
-                let text = &self.storage.get_word(word_key).text;
-                dbg!(text, n);
+        match cursor.pos {
+            CursorPos::Within(n) => {
+                match self.storage.get_item(cursor.tag)? {
+                    &Item::Word(word_key) => {
+                        let text = &self.storage.get_word(word_key).text;
+                        dbg!(text, n);
 
-                match op {
-                    TextOp::DeleteGraphemeLeft if n > 0 => {
-                        let new_pos = text[.. n].grapheme_indices(true).rev().next()
-                            .map(|(n, _)| n).unwrap_or(0);
-                        let new_text = format!("{}{}", &text[.. new_pos], &text[n ..]);
-                        if new_text.len() == 0 {
-                            self.document.remove(cursor.tag);
-                            return Some((cursor.tag, CursorPos::Before));
-                        }
-                        let new_item = Item::Word(self.storage.insert_word(&new_text));
-                        self.document.replace(cursor.tag, new_item);
-                        Some((cursor.tag, CursorPos::Within(new_pos)))
-                    }
-                    TextOp::DeleteGraphemeRight if n < text.len() => {
-                        let new_pos = text[n ..].grapheme_indices(true).nth(1)
-                            .map(|(m, _)| n + m).unwrap_or(text.len());
-                        let new_text = format!("{}{}", &text[.. n], &text[new_pos ..]);
-                        if new_text.len() == 0 {
-                            self.document.remove(cursor.tag);
-                            return Some((cursor.tag, CursorPos::Before));
-                        }
-                        let new_item = Item::Word(self.storage.insert_word(&new_text));
-                        self.document.replace(cursor.tag, new_item);
-
-                        Some((cursor.tag, CursorPos::Within(n)))
-                    }
-                    TextOp::Insert(c) => {
-                        let new_text = format!("{}{}{}", &text[.. n], c, &text[n ..]);
-                        let new_item = Item::Word(self.storage.insert_word(&new_text));
-                        self.document.replace(cursor.tag, new_item);
-
-                        Some((cursor.tag, CursorPos::Within(n + c.len_utf8())))
-                    }
-
-                    // split, but only when within a word
-                    TextOp::Split if n > 0 && n < text.len() => {
-                        let left_text = text[.. n].to_owned();
-                        let right_text = text[n ..].to_owned();
-                        let left_item = Item::Word(self.storage.insert_word(&left_text));
-                        let right_item = Item::Word(self.storage.insert_word(&right_text));
-                        self.document.replace(cursor.tag, right_item);
-                        self.document.insert(cursor.tag, left_item);
-
-                        let tag = self.document.get_next_tag(cursor.tag)?;
-                        Some((tag, CursorPos::Within(0)))
-                    }
-
-                    // place cursor before the word
-                    TextOp::Split if n == 0 => {
-                        Some((cursor.tag, CursorPos::Before))
-                    }
-
-                    // place cursor behind the word
-                    TextOp::Split if n == text.len() => {
-                        let tag = self.document.get_next_tag(cursor.tag)?;
-                        Some((tag, CursorPos::Before))
-                    }
-
-                    TextOp::DeleteGraphemeLeft if n == 0 => {
-                        // join with previous item … if possible
-                        let left_tag = self.document.get_previous_tag(cursor.tag)?;
-                        match self.document.find(left_tag)? {
-                            FindResult::Item(_, &Item::Word(left_word_key)) => {
-                                let left_text = &self.storage.get_word(left_word_key).text;
-                                let new_pos = left_text.len();
-                                let new_text = format!("{}{}", left_text, text);
+                        match op {
+                            TextOp::DeleteGraphemeLeft if n > 0 => {
+                                let new_pos = text[.. n].grapheme_indices(true).rev().next()
+                                    .map(|(n, _)| n).unwrap_or(0);
+                                let new_text = format!("{}{}", &text[.. new_pos], &text[n ..]);
+                                if new_text.len() == 0 {
+                                    self.document.remove(&mut self.storage, cursor.tag);
+                                    return Some((cursor.tag, CursorPos::Before));
+                                }
                                 let new_item = Item::Word(self.storage.insert_word(&new_text));
-                                self.document.replace(left_tag, new_item);
-                                self.document.remove(cursor.tag);
+                                self.document.replace(&mut self.storage, cursor.tag, new_item);
+                                Some((cursor.tag, CursorPos::Within(new_pos)))
+                            }
+                            TextOp::DeleteGraphemeRight if n < text.len() => {
+                                let new_pos = text[n ..].grapheme_indices(true).nth(1)
+                                    .map(|(m, _)| n + m).unwrap_or(text.len());
+                                let new_text = format!("{}{}", &text[.. n], &text[new_pos ..]);
+                                if new_text.len() == 0 {
+                                    self.document.remove(&mut self.storage, cursor.tag);
+                                    return Some((cursor.tag, CursorPos::Before));
+                                }
+                                let new_item = Item::Word(self.storage.insert_word(&new_text));
+                                self.document.replace(&mut self.storage, cursor.tag, new_item);
 
-                                Some((left_tag, CursorPos::Within(new_pos)))
+                                Some((cursor.tag, CursorPos::Within(n)))
+                            }
+                            TextOp::Insert(c) => {
+                                let new_text = format!("{}{}{}", &text[.. n], c, &text[n ..]);
+                                let new_item = Item::Word(self.storage.insert_word(&new_text));
+                                self.document.replace(&mut self.storage, cursor.tag, new_item);
+
+                                Some((cursor.tag, CursorPos::Within(n + c.len_utf8())))
+                            }
+
+                            // split, but only when within a word
+                            TextOp::Split if n > 0 && n < text.len() => {
+                                let left_text = text[.. n].to_owned();
+                                let right_text = text[n ..].to_owned();
+                                let left_item = Item::Word(self.storage.insert_word(&left_text));
+                                let right_item = Item::Word(self.storage.insert_word(&right_text));
+                                self.document.replace(&mut self.storage, cursor.tag, right_item);
+                                self.document.insert(&mut self.storage, cursor.tag, left_item);
+
+                                let tag = self.document.get_next_tag(&self.storage, cursor.tag)?;
+                                Some((tag, CursorPos::Within(0)))
+                            }
+
+                            // place cursor before the word
+                            TextOp::Split if n == 0 => {
+                                Some((cursor.tag, CursorPos::Before))
+                            }
+
+                            // place cursor behind the word
+                            TextOp::Split if n == text.len() => {
+                                let tag = self.document.get_next_tag(&self.storage, cursor.tag)?;
+                                Some((tag, CursorPos::Before))
+                            }
+
+                            TextOp::DeleteGraphemeLeft if n == 0 => {
+                                // join with previous item … if possible
+                                let left_tag = self.document.get_previous_tag(&self.storage, cursor.tag)?;
+                                match self.storage.get_item(left_tag)? {
+                                    &Item::Word(left_word_key) => {
+                                        let left_text = &self.storage.get_word(left_word_key).text;
+                                        let new_pos = left_text.len();
+                                        let new_text = format!("{}{}", left_text, text);
+                                        let new_item = Item::Word(self.storage.insert_word(&new_text));
+                                        self.document.replace(&mut self.storage, left_tag, new_item);
+                                        self.document.remove(&mut self.storage, cursor.tag);
+
+                                        Some((left_tag, CursorPos::Within(new_pos)))
+                                    }
+                                    _ => None
+                                }
                             }
                             _ => None
                         }
@@ -425,29 +434,29 @@ impl App {
                     _ => None
                 }
             }
-            (CursorPos::Before, _) => {
+            CursorPos::Before => {
                 match op {
                     TextOp::DeleteItemLeft => {
-                        let left_tag = self.document.get_previous_tag(cursor.tag)?;
-                        self.document.remove(left_tag);
+                        let left_tag = self.document.get_previous_tag(&self.storage, cursor.tag)?;
+                        self.document.remove(&mut self.storage, left_tag);
                         Some((left_tag, CursorPos::Before))
                     }
                     TextOp::DeleteItemRight => {
-                        self.document.remove(cursor.tag);
+                        self.document.remove(&mut self.storage, cursor.tag);
                         Some((cursor.tag, CursorPos::Before))
                     }
                     TextOp::Insert(c) => {
                         let new_text = format!("{}", c);
                         let new_item = Item::Word(self.storage.insert_word(&new_text));
-                        self.document.insert(cursor.tag, new_item);
+                        self.document.insert(&mut self.storage, cursor.tag, new_item);
 
                         Some((cursor.tag, CursorPos::Within(new_text.len())))
                     }
                     // place cursor at the end of the previous word
                     TextOp::DeleteGraphemeLeft => {
-                        let left_tag = self.document.get_previous_tag(cursor.tag)?;
-                        match self.document.find(left_tag)? {
-                            FindResult::Item(_, &Item::Word(left_word_key)) => {
+                        let left_tag = self.document.get_previous_tag(&self.storage, cursor.tag)?;
+                        match self.storage.get_item(left_tag)? {
+                            &Item::Word(left_word_key) => {
                                 let left_text = &self.storage.get_word(left_word_key).text;
                                 Some((left_tag, CursorPos::Within(left_text.len())))
                             }
@@ -457,14 +466,13 @@ impl App {
                     _ => None
                 }
             }
-            _ => None
         }
     }
     fn cursor_op(&mut self, op: CursorOp) -> Option<(Tag, CursorPos)> {
         let cursor = self.cursor?;
 
-        match (cursor.pos, self.document.find(cursor.tag)?) {
-            (CursorPos::Within(n), FindResult::Item(_, &Item::Word(word_key))) => {
+        match (cursor.pos, self.storage.get_item(cursor.tag)) {
+            (CursorPos::Within(n), Some(&Item::Word(word_key))) => {
                 let text = &self.storage.get_word(word_key).text;
                 match op {
                     CursorOp::GraphemeRight if n < text.len() => {
@@ -481,14 +489,14 @@ impl App {
                         Some((cursor.tag, CursorPos::Before))
                     }
                     CursorOp::GraphemeRight => {
-                        let right = self.document.get_next_tag(cursor.tag)?;
+                        let right = self.document.get_next_tag(&self.storage, cursor.tag)?;
                         Some((right, CursorPos::Before))
                     }
                     CursorOp::ItemLeft => {
                         Some((cursor.tag, CursorPos::Before))
                     }
                     CursorOp::ItemRight => {
-                        let right_tag = self.document.get_next_tag(cursor.tag)?;
+                        let right_tag = self.document.get_next_tag(&self.storage, cursor.tag)?;
                         Some((right_tag, CursorPos::Before))
                     }
                     _ => None
@@ -497,24 +505,28 @@ impl App {
             (CursorPos::Before, _) => {
                 match op {
                     CursorOp::GraphemeLeft => {
-                        let left_tag = self.document.get_previous_tag(cursor.tag)?;
-                        match self.document.find(left_tag)? {
-                            FindResult::Item(_, &Item::Word(left_key)) => {
+                        let left_tag = self.document.get_previous_tag(&self.storage, cursor.tag)?;
+                        match self.storage.get_item(left_tag)? {
+                            &Item::Word(left_key) => {
                                 let left_text = &self.storage.get_word(left_key).text;
                                 Some((left_tag, CursorPos::Within(left_text.len())))
                             },
-                            _ => None
+                            _ => Some((left_tag, CursorPos::Before))
                         }
                     },
                     CursorOp::GraphemeRight => {
-                        Some((cursor.tag, CursorPos::Within(0)))
+                        let right_tag = self.document.get_next_tag(&self.storage, cursor.tag)?;
+                        match self.storage.get_item(right_tag)? {
+                            &Item::Word(_) => Some((cursor.tag, CursorPos::Within(0))),
+                            _ => Some((right_tag, CursorPos::Before))
+                        }
                     },
                     CursorOp::ItemLeft => {
-                        let left_tag = self.document.get_previous_tag(cursor.tag)?;
+                        let left_tag = self.document.get_previous_tag(&self.storage, cursor.tag)?;
                         Some((left_tag, CursorPos::Before))
                     }
                     CursorOp::ItemRight => {
-                        let right_tag = self.document.get_next_tag(cursor.tag)?;
+                        let right_tag = self.document.get_next_tag(&self.storage, cursor.tag)?;
                         Some((right_tag, CursorPos::Before))
                     }
                     _ => None

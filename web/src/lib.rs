@@ -2,22 +2,26 @@ use grafeia_app::app::App;
 use wasm_bindgen::prelude::*;
 use js_sys::Uint8Array;
 use std::panic;
-use log::Log;
+use log::{Log, Level};
 
 #[wasm_bindgen]
 extern {
     fn ws_log(msg: &str);
+    fn log_err(msg: &str);
 }
 
 fn panic_hook(info: &panic::PanicInfo) {
     let mut msg = info.to_string();
-    ws_log(&msg);
+    log_err(&msg);
 
     console_error_panic_hook::hook(info);
 }
 
 pub fn log(record: &log::Record) {
-    ws_log(&format!("{:?} {}", record.level(), record.args()));
+    match log.level() {
+        Level::Error => log_err(&record.args().to_string()),
+        level => ws_log(&format!("{:?} {}", level, record.args()))
+    }
 }
 
 struct WebsocketLogger;

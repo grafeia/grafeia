@@ -18,3 +18,16 @@ body {
     padding: 5px;
     cursor: pointer;
 }
+div#log {
+    background-color: lavender;
+    padding: 0.8em;
+}
+#log p {
+    margin: 0.2em 0;
+    background-color: beige;
+    font-size: 11pt;
+}
+#log h2 {
+    margin: 0.2em 0;
+    font-size: 14pt;
+}

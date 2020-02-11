@@ -1,13 +1,13 @@
 use slotmap::SlotMap;
 use indexmap::{IndexMap, IndexSet};
 use serde::{Serialize, Deserialize};
-use crate::content::{Word, Symbol, Type, FontFace, Target, Sequence, Item};
+use crate::content::{*};
 use crate::object::Object;
 
 macro_rules! key {
     ($ty:ident) => {
         #[derive(Serialize, Deserialize)]
-        #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
+        #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
         pub struct $ty(usize);
     }
 }
@@ -41,6 +41,7 @@ impl Storage {
             types:   IndexMap::new(),
             fonts:   SlotMap::with_key(),
             objects: SlotMap::with_key(),
+            sequences: SlotMap::with_key(),
         }
     }
     pub fn insert_word(&mut self, text: &str) -> WordKey {
@@ -57,7 +58,7 @@ impl Storage {
         let (idx, _) = self.symbols.insert_full(Symbol { text: text.to_owned() });
         SymbolKey(idx)
     }
-    pub fn insert_sequenc(&mut self, seq: Sequence) -> SequenceKey {
+    pub fn insert_sequence(&mut self, seq: Sequence) -> SequenceKey {
         self.sequences.insert(seq)
     }
     pub fn insert_type(&mut self, key: impl Into<String>, typ: Type) -> TypeKey {
@@ -71,7 +72,9 @@ impl Storage {
         self.objects.insert(obj)
     }
     pub fn get_item(&self, tag: Tag) -> Option<&Item> {
-        self.sequences.get(tag.0).and_then(|seq| seq.items().get(tag.1))
+        let (key, idx) = tag.seq_and_idx()?;
+        let seq = self.sequences.get(key)?;
+        seq.items.get(idx)
     }
     pub fn get_word(&self, key: WordKey) -> &Word {
         self.words.get_index(key.0).unwrap()

@@ -1,13 +1,16 @@
 function connect() {
     return new Promise(function(resolve, reject) {
         // Create WebSocket connection.
-        const socket = new WebSocket(`ws://${window.location.host}/log`);
+        let socket = new WebSocket(`ws://${window.location.host}/log`);
         // Connection opened
         socket.addEventListener('open', function (event) {
             socket.send('Hello Server!');
             resolve(function(msg) {
                 socket.send(msg);
             });
+        });
+        socket.addEventListener('error', function (event) {
+            reject(event);
         });
     
         // Listen for messages
@@ -16,23 +19,40 @@ function connect() {
         });
     });
 }
-
-let ws_log;
+let log_div = document.getElementById("log");
+function log_err(msg) {
+    ws_log(msg);
+    let p = document.createElement("p");
+    p.appendChild(document.createTextNode(msg));
+    log_div.appendChild(p);
+}
+var ws_log = function(msg) {
+    console.log(msg);
+}
 async function init() {
-    ws_log = await connect();
+    if (window.location.host !== "grafeia.github.io") {
+        try {
+            ws_log = await connect();
+        } catch {
+            log_err("can't connect logger");
+        }
+    }
 
-    ws_log("init");
+    log_err("init");
     if (localStorage.getItem("reset")) {
         localStorage.clear();
     }
-    ws_log("ready for wasm");
+    log_err("ready for wasm");
     await wasm_bindgen("pkg/grafeia_web_bg.wasm").catch(function(e) {
-        console.error(e);
-        document.getElementById("status").innerText += " failed.";
+        log_err(e);
     });
-    ws_log("wasm loaded");
-    let app = new wasm_bindgen.Grafeia();
-    app.show();
+    log_err("wasm loaded");
+    try {
+        let app = new wasm_bindgen.Grafeia();
+        app.show();
+    } catch (e) {
+        log_err(e);
+    }
 }
 init();
 

@@ -7,6 +7,7 @@ use pathfinder_geometry::{
 };
 use pathfinder_renderer::scene::{Scene, PathObject};
 use crate::*;
+use crate::draw::DrawCtx;
 use std::fmt;
 
 #[derive(Serialize, Deserialize)]
@@ -33,20 +34,14 @@ pub enum Size {
     Height(Length)
 }
 
-#[derive(Copy, Clone)]
-pub struct ObjectContext<'a> {
-    pub target:      &'a Target,
-    pub type_design: &'a TypeDesign,
-    pub storage:     &'a Storage,
-}
 impl Object {
-    pub fn size(&self, ctx: ObjectContext) -> FlexMeasure {
+    pub fn size(&self, ctx: &DrawCtx) -> FlexMeasure {
         match *self {
             Object::Svg(ref svg) => svg.size(ctx),
             _ => FlexMeasure::zero()
         }
     }
-    pub fn draw(&self, ctx: ObjectContext, origin: Vector2F, width: Length, height: Length, scene: &mut Scene) {
+    pub fn draw(&self, ctx: &DrawCtx, origin: Vector2F, width: Length, height: Length, scene: &mut Scene) {
         match *self {
             Object::Svg(ref svg) => svg.draw(ctx, origin, width, height, scene),
             Object::TeX => {}
@@ -91,7 +86,7 @@ impl Serialize for SvgObject {
     }
 }
 impl SvgObject {
-    fn size(&self, ctx: ObjectContext) -> FlexMeasure {
+    fn size(&self, ctx: &DrawCtx) -> FlexMeasure {
         let svg_size = self.scene.view_box().size();
         let (w, h) = match self.size {
             Size::FitWidth => (Some(ctx.target.content_box.width), None),
@@ -108,7 +103,7 @@ impl SvgObject {
         FlexMeasure::fixed_box(w, h)
     }
 
-    fn draw(&self, ctx: ObjectContext, origin: Vector2F, width: Length, height: Length, scene: &mut Scene) {
+    fn draw(&self, ctx: &DrawCtx, origin: Vector2F, width: Length, height: Length, scene: &mut Scene) {
         // coorinates are at the lower left, but objects expect the origin at the top left
         let view_box = self.scene.view_box();
         let size = view_box.size();

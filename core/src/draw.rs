@@ -70,6 +70,12 @@ impl Default for Cache {
         Cache::new()
     }
 }
+pub struct DrawCtx<'a> {
+    pub storage: &'a Storage,
+    pub target: &'a Target,
+    pub design: &'a Design,
+    pub type_design: &'a TypeDesign
+}
 impl Cache {
     pub fn new() -> Cache {
         Cache {
@@ -77,50 +83,55 @@ impl Cache {
         }
     }
 
+    fn render_item(&mut self, writer: &mut Writer, ctx: &DrawCtx, tag: Tag, item: &Item) {
+        match *item {
+            Item::Word(key) => {
+                let font = ctx.type_design.font;
+                let space = Glue::space(ctx.type_design.word_space);
+                let width = self.word_layout(key, &ctx.storage, font).advance.x();
+                let measure = FlexMeasure::fixed_box(Length::mm(width), ctx.type_design.line_height);
+
+                writer.word(space, space, key, measure, font, tag);
+            }
+            Item::Object(key) => {
+                let obj = ctx.storage.get_object(key);
+                let size = obj.size(ctx);
+                dbg!(size);
+                writer.object(Glue::any(), Glue::any(), key, size, tag);
+            }
+            Item::Sequence(key) => self.render_sequence(writer, ctx, key),
+            _ => {}
+        }
+    }
+    fn render_sequence(&mut self, writer: &mut Writer, ctx: &DrawCtx, key: SequenceKey) {
+        let seq = ctx.storage.get_sequence(key);
+        match ctx.type_design.display {
+            Display::Block => writer.promote(Glue::newline()),
+            Display::Paragraph(indent) => writer.space(Glue::newline(), Glue::hfill(), FlexMeasure::fixed(indent), false),
+            _ => {}
+        }
+        let ctx = DrawCtx {
+            type_design: ctx.design.get_type_or_default(seq.typ()),
+            .. *ctx
+        };
+        for (i, item) in seq.items.iter().enumerate() {
+            self.render_item(writer, &ctx, Tag::at(key, i), item);
+        }
+        match ctx.type_design.display {
+            Display::Block | Display::Paragraph(_) => writer.promote(Glue::hfill()),
+            _ => {}
+        }
+    }
+
     pub fn render(&mut self, storage: &Storage, target: &Target, document: &Document, design: &Design) -> Vec<Page> {
         let mut writer = Writer::new();
-        let type_design = design.default();
-        for (tag, r) in document.items(..) {
-            match r {
-                FindResult::SequenceStart(s) => {
-                    let type_design = design.get_type_or_default(s.typ());
-                    match type_design.display {
-                        Display::Block => writer.promote(Glue::newline()),
-                        Display::Paragraph(indent) => writer.space(Glue::newline(), Glue::hfill(), FlexMeasure::fixed(indent), false),
-                        _ => {}
-                    }
-                }
-                FindResult::SequenceEnd(s) => {
-                    let type_design = design.get_type_or_default(s.typ());
-                    match type_design.display {
-                        Display::Block | Display::Paragraph(_) => writer.promote(Glue::hfill()),
-                        _ => {}
-                    }
-                }
-                FindResult::Item(s, &Item::Word(key)) => {
-                    let type_design = design.get_type_or_default(s.typ());
-                    let font = type_design.font;
-                    let space = Glue::space(type_design.word_space);
-                    let width = self.word_layout(key, storage, font).advance.x();
-                    let measure = FlexMeasure::fixed_box(Length::mm(width), type_design.line_height);
-
-                    writer.word(space, space, key, measure, font, tag);
-                }
-                FindResult::Item(s, &Item::Object(key)) => {
-                    let obj = storage.get_object(key);
-                    let ctx = ObjectContext {
-                        target,
-                        storage,
-                        type_design
-                    };
-                    let size = obj.size(ctx);
-                    dbg!(size);
-                    writer.object(Glue::any(), Glue::any(), key, size, tag);
-                }
-                _ => {}
-            }
-        }
-        //self.render_sequence(&mut writer, &context, document.root(), 0);
+        let ctx = DrawCtx {
+            storage,
+            target,
+            design,
+            type_design: design.default()
+        };
+        self.render_sequence(&mut writer, &ctx, document.root);
 
         let mut pages = Vec::new();
         let stream = writer.finish();
@@ -158,12 +169,7 @@ impl Cache {
                             advance.x()
                         }
                         LayoutItem::Object(key, width) => {
-                            let ctx = ObjectContext {
-                                target,
-                                storage,
-                                type_design
-                            };
-                            storage.get_object(key).draw(ctx, p, width, line_height, &mut scene);
+                            storage.get_object(key).draw(&ctx, p, width, line_height, &mut scene);
                             width.value
                         }
                         _ => 0.0
@@ -181,10 +187,14 @@ impl Cache {
         pages
     }
 
-    pub fn get_position_on_page(&self, storage: &Storage, design: &Design, document: &Document, page: &Page, tag: Tag, byte_pos: usize) -> Option<(Vector2F, TypeKey)> {
-        match document.find(tag)? {
-            FindResult::Item(seq, &Item::Word(key)) => {
+    pub fn get_position_on_page(&self, storage: &Storage, design: &Design, document: &Document, page: &Page, tag: Tag, byte_pos: usize) -> Option<Vector2F> {
+        match *storage.get_item(tag)? {
+            Item::Word(key) => {
                 let rect = page.position(tag)?;
+                if byte_pos == 0 {
+                    return Some(rect.lower_left());
+                }
+                let seq = storage.get_sequence(tag.seq);
                 let type_design = design.get_type_or_default(seq.typ());
                 let word = storage.get_word(key);
                 let face = storage.get_font_face(type_design.font.font_face);
@@ -193,40 +203,24 @@ impl Cache {
 
                 for (&n, &(gid, offset)) in grapheme_indices.iter().zip(layout.glyphs.iter()) {
                     if n >= byte_pos {
-                        return Some((rect.lower_left() + offset.vector, seq.typ()));
+                        return Some(rect.lower_left() + offset.vector);
                     }
                 }
 
                 // point to the end
-                return Some((rect.lower_left() + layout.advance, seq.typ()));
+                return Some(rect.lower_left() + layout.advance);
             }
-            FindResult::SequenceStart(ref seq) => {
-                for (tag, r) in document.items(tag .. tag + seq.num_nodes()) {
-                    match r {
-                        FindResult::Item(_, Item::Word(_)) => {
-                            let rect = page.position(tag)?;
-                            return Some((rect.lower_left(), seq.typ()));
-                        }
-                        _ => {}
-                    }
-                }
-                None
+            Item::Sequence(key) => {
+                let first = document.get_first(storage, key);
+                let rect = page.position(first)?;
+                return Some(rect.lower_left());
             }
             _ => None
         }
     }
-    pub fn get_rect_on_page(&self, document: &Document, page: &Page, tag: Tag) -> Option<(RectF, TypeKey)> {
-        // first step is to locate the item on the page
-        let rect = page.position(tag)?;
-
-        // then get the layout of the word
-        if let FindResult::Item(seq, _) = document.find(tag)? {
-            return Some((rect, seq.typ()));
-        }
-        None
-    }
     pub fn find(&self, storage: &Storage, design: &Design, document: &Document, offset: f32, tag: Tag) -> Option<(Vector2F, usize, TypeKey)> {
-        if let FindResult::Item(seq, &Item::Word(key)) = document.find(tag)? {
+        if let &Item::Word(key) = storage.get_item(tag)? {
+            let seq = storage.get_sequence(tag.seq);
             let type_design = design.get_type_or_default(seq.typ());
             let word = storage.get_word(key);
             let face = storage.get_font_face(type_design.font.font_face);

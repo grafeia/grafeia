@@ -37,21 +37,27 @@ impl<'a> DocxWriter<'a> {
     }
 }
 
-pub fn export_docx(storage: &Storage, document: &Document, design: &Design) -> Vec<u8> {
-    let mut writer = DocxWriter::new();
-    for (_, r) in document.items(..) {
-        match r {
-            FindResult::SequenceStart(s) => {
-                let type_design = design.get_type_or_default(s.typ());
-                match type_design.display {
-                    Display::Inline => {},
-                    Display::Paragraph(_) | Display::Block => writer.flush_para(),
-                }
-            }
-            FindResult::Item(_, &Item::Word(key)) => writer.word(&storage.get_word(key).text),
+fn add_sequence<'a>(writer: &mut DocxWriter<'a>, storage: &'a Storage, key: SequenceKey, design: &'a Design) {
+    let seq = storage.get_sequence(key);
+
+    let type_design = design.get_type_or_default(seq.typ());
+    match type_design.display {
+        Display::Inline => {},
+        Display::Paragraph(_) | Display::Block => writer.flush_para(),
+    }
+
+    for item in seq.items() {
+        match item {
+            &Item::Word(key) => writer.word(&storage.get_word(key).text),
+            &Item::Sequence(key) => add_sequence(writer, storage, key, design),
             _ => {}
         }
     }
+}
+
+pub fn export_docx(storage: &Storage, document: &Document, design: &Design) -> Vec<u8> {
+    let mut writer = DocxWriter::new();
+    add_sequence(&mut writer, storage, document.root(), design);
     writer.flush_para();
     writer.finish()
 }

@@ -47,8 +47,10 @@ impl<'a> ContentBuilder<'a> {
         self.items.push(Item::Object(key));
         self
     }
-    pub fn finish(self) -> Document {
-        Document::new(Sequence::new(self.document_key, self.items))
+    pub fn finish(mut self) -> Document {
+        let seq = Sequence::new(self.document_key, self.items);
+        let root = self.storage.insert_sequence(seq);
+        Document::new(&self.storage, root)
     }
 }
 
@@ -72,7 +74,8 @@ impl<'a> TextBuilder<'a> {
 
     pub fn finish(mut self) -> ContentBuilder<'a> {
         let seq = Sequence::new(self.typ, self.nodes);
-        self.parent.items.push(Item::Sequence(Rc::new(seq)));
+        let key = self.parent.storage.insert_sequence(seq);
+        self.parent.items.push(Item::Sequence(key));
         self.parent
     }
 }

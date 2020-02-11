@@ -19,13 +19,11 @@ Design
 */
 
 use std::collections::{HashMap};
-use std::fmt::{self, Debug};
+use std::fmt::{Debug};
 use std::borrow::Borrow;
 use std::io;
 use std::path::Path;
 use std::ops::{Deref};
-use std::rc::Rc;
-use font;
 use pathfinder_content::outline::Outline;
 use serde::{Serialize, Deserialize, Serializer};
 
@@ -34,7 +32,7 @@ use crate::{
     units::{Length, Rect},
     Display, Color,
 };
-use crate::storage::{WordKey, SymbolKey, TargetKey, TypeKey, FontFaceKey, Storage, ObjectKey};
+use crate::storage::*;
 
 // possible design and information what it means
 // for example: plain text, a bullet list, a heading
@@ -104,7 +102,7 @@ impl Borrow<str> for Word {
 
 
 #[derive(Serialize, Deserialize)]
-#[derive(Debug, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub enum Item {
     Word(WordKey),
     Symbol(SymbolKey),
@@ -118,9 +116,36 @@ pub struct Attribute;
 
 #[derive(Serialize, Deserialize)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub enum Tag {
-    Within(SequenceKey, usize),
-    End(SequenceKey)
+pub struct Tag {
+    pub seq: SequenceKey,
+    pub pos: SequencePos,
+}
+
+#[derive(Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub enum SequencePos {
+    At(usize),
+    End
+}
+impl Tag {
+    pub fn seq_and_idx(&self) -> Option<(SequenceKey, usize)> {
+        match self.pos {
+            SequencePos::At(idx) => Some((self.seq, idx)),
+            SequencePos::End => None
+        }
+    }
+    pub fn end(seq: SequenceKey) -> Tag {
+        Tag {
+            seq,
+            pos: SequencePos::End
+        }
+    }
+    pub fn at(seq: SequenceKey, idx: usize) -> Tag {
+        Tag {
+            seq,
+            pos: SequencePos::At(idx)
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -132,7 +157,6 @@ pub struct Sequence {
 }
 impl Sequence {
     pub fn new(typ: TypeKey, items: Vec<Item>) -> Sequence {
-        let num_nodes = items.iter().map(|item| item.num_nodes()).sum();
         Sequence { typ, items, attrs: vec![] }
     }
     pub fn items(&self) -> &[Item] {
