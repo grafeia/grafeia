@@ -123,8 +123,9 @@ impl Cache {
         }
     }
 
-    pub fn render(&mut self, storage: &Storage, target: &Target, document: &Document, design: &Design) -> Vec<Page> {
+    pub fn render(&mut self, target: &Target, document: &Document, design: &Design) -> Vec<Page> {
         let mut writer = Writer::new();
+        let storage = &document.storage;
         let ctx = DrawCtx {
             storage,
             target,
@@ -187,17 +188,17 @@ impl Cache {
         pages
     }
 
-    pub fn get_position_on_page(&self, storage: &Storage, design: &Design, document: &Document, page: &Page, tag: Tag, byte_pos: usize) -> Option<Vector2F> {
-        match *storage.get_item(tag)? {
+    pub fn get_position_on_page(&self, design: &Design, document: &Document, page: &Page, tag: Tag, byte_pos: usize) -> Option<Vector2F> {
+        match *document.get_item(tag)? {
             Item::Word(key) => {
                 let rect = page.position(tag)?;
                 if byte_pos == 0 {
                     return Some(rect.lower_left());
                 }
-                let seq = storage.get_sequence(tag.seq);
+                let seq = document.get_sequence(tag.seq);
                 let type_design = design.get_type_or_default(seq.typ());
-                let word = storage.get_word(key);
-                let face = storage.get_font_face(type_design.font.font_face);
+                let word = document.get_word(key);
+                let face = document.get_font_face(type_design.font.font_face);
                 let grapheme_indices = grapheme_indices(face, &word.text);
                 let layout = self.layout_cache.get(&(type_design.font, key)).unwrap();
 
@@ -211,19 +212,19 @@ impl Cache {
                 return Some(rect.lower_left() + layout.advance);
             }
             Item::Sequence(key) => {
-                let first = document.get_first(storage, key);
+                let first = document.get_first(key);
                 let rect = page.position(first)?;
                 return Some(rect.lower_left());
             }
             _ => None
         }
     }
-    pub fn find(&self, storage: &Storage, design: &Design, document: &Document, offset: f32, tag: Tag) -> Option<(Vector2F, usize, TypeKey)> {
-        if let &Item::Word(key) = storage.get_item(tag)? {
-            let seq = storage.get_sequence(tag.seq);
+    pub fn find(&self, design: &Design, document: &Document, offset: f32, tag: Tag) -> Option<(Vector2F, usize, TypeKey)> {
+        if let &Item::Word(key) = document.get_item(tag)? {
+            let seq = document.get_sequence(tag.seq);
             let type_design = design.get_type_or_default(seq.typ());
-            let word = storage.get_word(key);
-            let face = storage.get_font_face(type_design.font.font_face);
+            let word = document.get_word(key);
+            let face = document.get_font_face(type_design.font.font_face);
             let grapheme_indices = grapheme_indices(face, &word.text);
             let layout = self.layout_cache.get(&(type_design.font, key)).unwrap();
 

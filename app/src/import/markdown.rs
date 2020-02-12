@@ -124,7 +124,7 @@ fn text_items<'a>(storage: &'a mut Storage, text: &'a str) -> impl Iterator<Item
         .map(move |s| Item::Word(storage.insert_word(s)))
 }
 
-pub fn import_markdown(storage: &mut Storage, text: &str) -> Document {
+pub fn import_markdown(mut storage: Storage, text: &str) -> Document {
     let document = storage.find_type("document").unwrap();
     let paragraph = storage.find_type("paragraph").unwrap();
     let emphasis = storage.find_type("emphasis").unwrap();
@@ -153,7 +153,7 @@ pub fn import_markdown(storage: &mut Storage, text: &str) -> Document {
                     Tag::Emphasis => emphasis,
                     Tag::List(None) => list,
                     Tag::Item => {
-                        items.extend(text_items(storage, "·"));
+                        items.extend(text_items(&mut storage, "·"));
                         paragraph
                     }
                     _ => panic!("tag {:?} not implemented", tag)
@@ -169,10 +169,10 @@ pub fn import_markdown(storage: &mut Storage, text: &str) -> Document {
                 current_key = parent_key;
             }
             Event::Text(text) => {
-                items.extend(text_items(storage, text.as_ref()));
+                items.extend(text_items(&mut storage, text.as_ref()));
             }
             Event::Code(text) => {
-                let seq = Sequence::new(inline_code, text_items(storage, text.as_ref()).collect());
+                let seq = Sequence::new(inline_code, text_items(&mut storage, text.as_ref()).collect());
                 let key = storage.insert_sequence(seq);
                 items.push(Item::Sequence(key));
             }
@@ -181,5 +181,5 @@ pub fn import_markdown(storage: &mut Storage, text: &str) -> Document {
     }
 
     let key = storage.insert_sequence(Sequence::new(document, items));
-    Document::new(&storage, key)
+    Document::new(storage, key)
 }

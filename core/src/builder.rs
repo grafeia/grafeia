@@ -1,16 +1,17 @@
 use crate::{Storage, Sequence, TypeKey, Item, Type, Document, Object};
 use std::rc::Rc;
 
-pub struct ContentBuilder<'a> {
-    storage: &'a mut Storage,
+pub struct ContentBuilder {
+    storage: Storage,
     para_key: TypeKey,
     chapter_key: TypeKey,
     document_key: TypeKey,
 
     items: Vec<Item>
 }
-impl<'a> ContentBuilder<'a> {
-    pub fn new(storage: &'a mut Storage) -> ContentBuilder<'a> {
+impl ContentBuilder {
+    pub fn new() -> Self {
+        let mut storage = Storage::new();
         ContentBuilder {
             para_key: storage.insert_type(
                 "paragraph",
@@ -28,14 +29,14 @@ impl<'a> ContentBuilder<'a> {
             items: vec![]
         }
     }
-    pub fn chapter(self) -> TextBuilder<'a> {
+    pub fn chapter(self) -> TextBuilder {
         TextBuilder {
             typ: self.chapter_key,
             nodes: vec![],
             parent: self
         }
     }
-    pub fn paragraph(self) -> TextBuilder<'a> {
+    pub fn paragraph(self) -> TextBuilder {
         TextBuilder {
             typ: self.para_key,
             nodes: vec![],
@@ -50,16 +51,16 @@ impl<'a> ContentBuilder<'a> {
     pub fn finish(mut self) -> Document {
         let seq = Sequence::new(self.document_key, self.items);
         let root = self.storage.insert_sequence(seq);
-        Document::new(&self.storage, root)
+        Document::new(self.storage, root)
     }
 }
 
-pub struct TextBuilder<'a> {
-    parent: ContentBuilder<'a>,
+pub struct TextBuilder {
+    parent: ContentBuilder,
     typ:    TypeKey,
     nodes:  Vec<Item>
 }
-impl<'a> TextBuilder<'a> {
+impl TextBuilder {
     pub fn word(mut self, w: &str) -> Self {
         let word = self.parent.storage.insert_word(w);
         self.nodes.push(Item::Word(word));
@@ -72,7 +73,7 @@ impl<'a> TextBuilder<'a> {
         self
     }
 
-    pub fn finish(mut self) -> ContentBuilder<'a> {
+    pub fn finish(mut self) -> ContentBuilder {
         let seq = Sequence::new(self.typ, self.nodes);
         let key = self.parent.storage.insert_sequence(seq);
         self.parent.items.push(Item::Sequence(key));

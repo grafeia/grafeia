@@ -55,9 +55,9 @@ fn add_sequence<'a>(writer: &mut DocxWriter<'a>, storage: &'a Storage, key: Sequ
     }
 }
 
-pub fn export_docx(storage: &Storage, document: &Document, design: &Design) -> Vec<u8> {
+pub fn export_docx(document: &Document, design: &Design) -> Vec<u8> {
     let mut writer = DocxWriter::new();
-    add_sequence(&mut writer, storage, document.root(), design);
+    add_sequence(&mut writer, &**document, document.root(), design);
     writer.flush_para();
     writer.finish()
 }

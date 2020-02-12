@@ -18,7 +18,7 @@ fn panic_hook(info: &panic::PanicInfo) {
 }
 
 pub fn log(record: &log::Record) {
-    match log.level() {
+    match record.level() {
         Level::Error => log_err(&record.args().to_string()),
         level => ws_log(&format!("{:?} {}", level, record.args()))
     }

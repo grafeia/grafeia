@@ -71,11 +71,6 @@ impl Storage {
     pub fn insert_object(&mut self, obj: Object) -> ObjectKey {
         self.objects.insert(obj)
     }
-    pub fn get_item(&self, tag: Tag) -> Option<&Item> {
-        let (key, idx) = tag.seq_and_idx()?;
-        let seq = self.sequences.get(key)?;
-        seq.items.get(idx)
-    }
     pub fn get_word(&self, key: WordKey) -> &Word {
         self.words.get_index(key.0).unwrap()
     }
@@ -100,5 +95,10 @@ impl Storage {
     }
     pub fn get_sequence_mut(&mut self, key: SequenceKey) -> &mut Sequence {
         self.sequences.get_mut(key).unwrap()
+    }
+    pub fn get_item(&self, tag: Tag) -> Option<&Item> {
+        let (key, idx) = tag.seq_and_idx()?;
+        let seq = self.get_sequence(key);
+        seq.items.get(idx)
     }
 }
