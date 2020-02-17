@@ -1,4 +1,4 @@
-use grafeia_app::app::App;
+use grafeia_app::app::NetworkApp;
 use wasm_bindgen::prelude::*;
 use js_sys::Uint8Array;
 use std::panic;
@@ -53,13 +53,13 @@ pub fn run() {
 
 
 #[wasm_bindgen]
-pub struct Grafeia(App);
+pub struct Grafeia(NetworkApp);
 
 #[wasm_bindgen]
 impl Grafeia {
     #[wasm_bindgen(constructor)]
     pub fn new() -> Grafeia {
-        Grafeia(App::load().unwrap_or_else(App::build))
+        Grafeia(NetworkApp::new())
     }
 
     #[wasm_bindgen]

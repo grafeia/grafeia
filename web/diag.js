@@ -1,10 +1,16 @@
-let ws_log = function(msg) {};
+let ws_log = console.log;
 let items = document.getElementById("items");
 for (let node of items.childNodes) {
     node.addEventListener("keydown", ws_log);
     node.addEventListener("input", ws_log);
     node.addEventListener("keypress", ws_log);
 }
+function wheel(e) {
+    console.log(e.deltaX, e.deltaY);
+}
+let scroll = document.getElementById("scroll");
+scroll.addEventListener("wheel", wheel, { passive: true });
+
 function connect() {
     return new Promise(function(resolve, reject) {
         // Create WebSocket connection.

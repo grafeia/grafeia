@@ -1,5 +1,5 @@
 [package]
-name = "server"
+name = "grafeia_server"
 version = "0.1.0"
 authors = ["Sebastian K <s3bk@protonmail.com>"]
 edition = "2018"
@@ -9,5 +9,8 @@ edition = "2018"
 [dependencies]
 warp = { version = "*", features = ["websocket"] }
 env_logger = "*"
-tokio = { version = "0.2", features = ["macros", "rt-threaded"] }
-futures = { version = "0.3", default-features = false }
+tokio = { version = "0.2", features = ["macros"] }
+futures = { version = "0.3" }
+grafeia_core = { path = "../core" }
+bincode = "*"
+log = "0.4.8"

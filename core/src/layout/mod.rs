@@ -52,6 +52,8 @@ enum Entry {
     /// (breaking, measure)
     Space(bool, FlexMeasure),
 
+    Empty(Tag),
+
     Object(ObjectKey, FlexMeasure, Tag),
     
     /// Somtimes there are different possiblites of representing something.
@@ -77,7 +79,8 @@ enum Entry {
 pub enum Item {
     Word(WordKey, Font),
     Symbol(SymbolKey, Font),
-    Object(ObjectKey, Length),
+    Object(ObjectKey),
+    Empty
 }
 
 #[derive(Debug)]

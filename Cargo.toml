@@ -4,7 +4,7 @@ members = [
     "gui",
     "app",
     "web",
-    "server"
+    "server",
 ]
 
 [patch."https://github.com/s3bk/winit"]
@@ -12,6 +12,12 @@ winit = { path = "../winit", features = ["web-sys"]}
 
 [patch."https://github.com/s3bk/pathfinder_view"]
 pathfinder_view = { path = "../pathfinder_view"}
+
+[patch."https://github.com/s3bk/vector"]
+vector = { path = "../vector"}
+
+[patch."https://github.com/pdf-rs/font"]
+font = { path = "../font"}
 
 [patch."https://github.com/s3bk/pathfinder"]
 pathfinder_gl = { path = "../pathfinder/gl"}
@@ -24,4 +30,3 @@ pathfinder_renderer = { path = "../pathfinder/renderer"}
 pathfinder_resources = { path = "../pathfinder/resources"}
 pathfinder_simd = { path = "../pathfinder/simd"}
 pathfinder_svg = { path = "../pathfinder/svg"}
-

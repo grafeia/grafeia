@@ -18,6 +18,7 @@ pathfinder_export = { git = "https://github.com/s3bk/pathfinder/" }
 vector = { git = "https://github.com/s3bk/vector/" }
 font = { git = "https://github.com/pdf-rs/font" }
 unicode_categories = "*"
+futures = "0.3"
 
 cfg-if = "*"
 winit = { git = "https://github.com/s3bk/winit", features = ["web-sys"] }
@@ -31,6 +32,7 @@ pulldown-cmark = { version = "*", optional = true }
 
 [target.'cfg(target_arch="wasm32")'.dependencies]
 web-sys = { version = "*", features = ["Storage", "Window"] }
-wasm-bindgen = "*"
+wasm-bindgen = { version = "*" }
 serde_json = "*"
 base64  = "*"
+js-sys = "*"

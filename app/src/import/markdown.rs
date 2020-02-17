@@ -4,13 +4,13 @@ use std::mem::replace;
 
 pub fn markdown_design(storage: &mut Storage) -> Design {
     let coramont_regular = storage.insert_font_face(
-        Vec::from(&include_bytes!("../../../data/Cormorant-Regular.ttf")[..]).into()
+        FontFace::from_data(include_bytes!("../../../data/Cormorant-Regular.ttf")[..].into())
     );
     let coramont_italic = storage.insert_font_face(
-        Vec::from(&include_bytes!("../../../data/Cormorant-Regular.ttf")[..]).into()
+        FontFace::from_data(include_bytes!("../../../data/Cormorant-Regular.ttf")[..].into())
     );
     let didot = storage.insert_font_face(
-        Vec::from(&include_bytes!("../../../data/GFSDidot.otf")[..]).into()
+        FontFace::from_data(include_bytes!("../../../data/GFSDidot.otf")[..].into())
     );
     
     let default = TypeDesign {
@@ -124,7 +124,7 @@ fn text_items<'a>(storage: &'a mut Storage, text: &'a str) -> impl Iterator<Item
         .map(move |s| Item::Word(storage.insert_word(s)))
 }
 
-pub fn import_markdown(mut storage: Storage, text: &str) -> Document {
+pub fn import_markdown(mut storage: Storage, text: &str) -> LocalDocument {
     let document = storage.find_type("document").unwrap();
     let paragraph = storage.find_type("paragraph").unwrap();
     let emphasis = storage.find_type("emphasis").unwrap();
@@ -140,12 +140,11 @@ pub fn import_markdown(mut storage: Storage, text: &str) -> Document {
     let mut items = vec![];
     let mut current_key = document;
 
-    for event in Parser::new(text) {
+    let mut events = Parser::new(text).into_iter();
+    while let Some(event) = events.next() {
         dbg!(&event);
         match event {
             Event::Start(tag) => {
-                stack.push((current_key, replace(&mut items, vec![])));
-
                 let key = match tag {
                     Tag::Paragraph => paragraph,
                     Tag::Heading(level) => headings.get(level as usize).expect("invalid heading level").clone(),
@@ -156,8 +155,27 @@ pub fn import_markdown(mut storage: Storage, text: &str) -> Document {
                         items.extend(text_items(&mut storage, "·"));
                         paragraph
                     }
+                    Tag::CodeBlock(lang) => {
+                        let mut code = String::new();
+                        while let Some(event) = events.next() {
+                            match event {
+                                Event::End(tag) => break,
+                                Event::Text(text) | Event::Code(text) => code.push_str(&text),
+                                _ => unreachable!()
+                            }
+                        }
+                        match lang.as_ref() {
+                            "tex" | "TeX" | "latex" | "LaTeX" => {
+                                let key = storage.insert_object(Object::TeX(TeX::display(code)));
+                                items.push(Item::Object(key));
+                            }
+                            _ => {}
+                        }
+                        continue;
+                    }
                     _ => panic!("tag {:?} not implemented", tag)
                 };
+                stack.push((current_key, replace(&mut items, vec![])));
                 current_key = key;
             }
             Event::End(_) => {
@@ -181,5 +199,5 @@ pub fn import_markdown(mut storage: Storage, text: &str) -> Document {
     }
 
     let key = storage.insert_sequence(Sequence::new(document, items));
-    Document::new(storage, key)
+    LocalDocument::new(storage, key)
 }

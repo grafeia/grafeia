@@ -122,6 +122,9 @@ impl Writer {
     pub fn object(&mut self, left: Glue, right: Glue, key: ObjectKey, measure: FlexMeasure, tag: Tag) {
         self.push(left, right, Entry::Object(key, measure, tag));
     }
+    pub fn empty(&mut self, left: Glue, right: Glue, tag: Tag) {
+        self.push(left, right, Entry::Empty(tag));
+    } 
     
     #[inline(always)]
     pub fn promote(&mut self, glue: Glue) {

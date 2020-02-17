@@ -24,6 +24,7 @@ use std::borrow::Borrow;
 use std::io;
 use std::path::Path;
 use std::ops::{Deref};
+use std::sync::Arc;
 use pathfinder_content::outline::Outline;
 use serde::{Serialize, Deserialize, Serializer};
 
@@ -36,7 +37,7 @@ use crate::storage::*;
 
 // possible design and information what it means
 // for example: plain text, a bullet list, a heading
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Type {
     pub description: String,
 }
@@ -46,24 +47,34 @@ impl Type {
     }
 }
 
+#[derive(Serialize, Deserialize, Clone)]
+pub struct FontFace(Arc<FontFaceInner>);
+
 #[derive(Deserialize)]
 #[serde(from="Vec<u8>")]
-pub struct FontFace {
+struct FontFaceInner {
     data: Vec<u8>,
-    face: Box<dyn font::Font<Outline>>
+
+    #[serde(skip)]
+    face: Box<dyn font::Font<Outline> + Send + Sync + 'static>
 }
-impl From<Vec<u8>> for FontFace {
+
+impl From<Vec<u8>> for FontFaceInner {
     fn from(data: Vec<u8>) -> Self {
-        let face = font::parse(&data);
-        FontFace { data, face }
+        let face = font::parse::<Outline>(&data);
+        FontFaceInner { data, face }
     }
 }
 impl FontFace {
+    pub fn from_data(data: Vec<u8>) -> Self {
+        FontFace(Arc::new(data.into()))
+    }
     pub fn from_path(path: impl AsRef<Path>) -> io::Result<Self> {
-        Ok(Self::from(std::fs::read(path)?))
+        let inner = FontFaceInner::from(std::fs::read(path)?);
+        Ok(FontFace(Arc::new(inner)))
     }
 }
-impl Serialize for FontFace {
+impl Serialize for FontFaceInner {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -74,12 +85,12 @@ impl Serialize for FontFace {
 impl Deref for FontFace {
     type Target = dyn font::Font<Outline>;
     fn deref(&self) -> &Self::Target {
-        &*self.face
+        &*self.0.face
     }
 }
 
 #[derive(Serialize, Deserialize)]
-#[derive(Hash, Eq, PartialEq)]
+#[derive(Hash, Eq, PartialEq, Clone)]
 pub struct Symbol {
     pub text: String
 }
@@ -90,7 +101,7 @@ impl Borrow<str> for Symbol {
 }
 
 #[derive(Serialize, Deserialize)]
-#[derive(Hash, Eq, PartialEq, Debug)]
+#[derive(Hash, Eq, PartialEq, Debug, Clone)]
 pub struct Word {
     pub text: String
 }
@@ -102,7 +113,7 @@ impl Borrow<str> for Word {
 
 
 #[derive(Serialize, Deserialize)]
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
 pub enum Item {
     Word(WordKey),
     Symbol(SymbolKey),
@@ -168,7 +179,7 @@ impl Sequence {
 }
 
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Design {
     name: String,
     map: HashMap<TypeKey, TypeDesign>,
@@ -182,6 +193,9 @@ impl Design {
             default
         }
     }
+    pub fn name(&self) -> &str {
+        self.name.as_str()
+    }
     pub fn set_type(&mut self, key: TypeKey, value: TypeDesign) {
         self.map.insert(key, value);
     }
@@ -193,6 +207,9 @@ impl Design {
     }
     pub fn default(&self) -> &TypeDesign {
         &self.default
+    }
+    pub fn items<'s>(&'s self) -> impl Iterator<Item=(TypeKey, &TypeDesign)> + 's {
+        self.map.iter().map(|(&k, v)| (k, v))
     }
 }
 
@@ -218,7 +235,7 @@ pub struct Font {
 /// Describes a physical print target.
 /// The author usually has only few choices here
 /// as the parameters are given by the printer
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Target {
     // user visible string
     pub description: String,

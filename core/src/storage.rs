@@ -101,4 +101,22 @@ impl Storage {
         let seq = self.get_sequence(key);
         seq.items.get(idx)
     }
+    pub fn sequences<'s>(&'s self) -> impl Iterator<Item=(SequenceKey, &Sequence)> + 's {
+        self.sequences.iter()
+    }
+    pub fn words<'s>(&'s self) -> impl Iterator<Item=(WordKey, &Word)> + 's {
+        self.words.iter().enumerate().map(|(i, w)| (WordKey(i), w))
+    }
+    pub fn symbols<'s>(&'s self) -> impl Iterator<Item=(SymbolKey, &Symbol)> + 's {
+        self.symbols.iter().enumerate().map(|(i, s)| (SymbolKey(i), s))
+    }
+    pub fn objects<'s>(&'s self) -> impl Iterator<Item=(ObjectKey, &Object)> + 's {
+        self.objects.iter()
+    }
+    pub fn fonts<'s>(&'s self) -> impl Iterator<Item=(FontFaceKey, &FontFace)> + 's {
+        self.fonts.iter()
+    }
+    pub fn types<'s>(&'s self) -> impl Iterator<Item=(TypeKey, &str, &Type)> + 's {
+        self.types.iter().enumerate().map(|(i, (name, typ))| (TypeKey(i), name.as_str(), typ))
+    }
 }

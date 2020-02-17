@@ -61,6 +61,33 @@ impl Bounds {
 }
 
 #[derive(Serialize, Deserialize)]
+pub struct Size {
+    pub width: Length,
+    pub height: Length
+}
+impl Size {
+    pub fn new(width: Length, height: Length) -> Self {
+        Size { width, height }
+    }
+    pub fn zero() -> Self {
+        Size { width: Length::zero(), height: Length::zero() }
+    }
+}
+impl Into<Vector2F> for Size {
+    fn into(self) -> Vector2F {
+        Vector2F::new(self.width.value, self.height.value)
+    }
+}
+impl From<Vector2F> for Size {
+    fn from(v: Vector2F) -> Self {
+        Size {
+            width: Length { value: v.x() },
+            height: Length { value: v.y() }
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
 #[derive(Copy, Clone)]
 pub struct Rect {
     pub left: Length,

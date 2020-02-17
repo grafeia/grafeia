@@ -1,6 +1,6 @@
 use super::{Entry, StreamVec, FlexMeasure, Item};
 //use layout::style::{Style};
-use crate::units::Length;
+use crate::units::{Length, Size};
 use std::fmt::{self, Debug};
 use crate::content::{Font, Tag};
 
@@ -434,14 +434,13 @@ pub struct Line<'l, 'a: 'l> {
     measure:    FlexMeasure,
     line:       LineBreak
 }
-impl <'l, 'a: 'l> Line<'l, 'a> {
+impl<'l, 'a: 'l> Line<'l, 'a> {
     pub fn height(&self) -> Length {
-        self.measure.height
+        self.line.height
     }
 }
-
 impl<'l, 'a: 'l> Iterator for Line<'l, 'a> {
-    type Item = (Length, Item, Tag);
+    type Item = (Length, Size, Item, Tag);
     fn next(&mut self) -> Option<Self::Item> {
         while self.pos < self.end {
             let pos = self.pos;
@@ -451,12 +450,14 @@ impl<'l, 'a: 'l> Iterator for Line<'l, 'a> {
                 Entry::Word(w, m, font, tag) => {
                     let x = self.measure.at(self.line.factor);
                     self.measure += m;
-                    return Some((x, Item::Word(w, font), tag));
+                    let size = Size::new(m.at(self.line.factor), m.height);
+                    return Some((x, size, Item::Word(w, font), tag));
                 },
                 Entry::Punctuation(s, m, font, tag) => {
                     let x = self.measure.at(self.line.factor);
                     self.measure += m;
-                    return Some((x, Item::Symbol(s, font), tag));
+                    let size = Size::new(m.at(self.line.factor), m.height);
+                    return Some((x, size, Item::Symbol(s, font), tag));
                 },
                 Entry::Space(_, s) => {
                     self.measure += s;
@@ -464,8 +465,13 @@ impl<'l, 'a: 'l> Iterator for Line<'l, 'a> {
                 Entry::Object(key, m, tag) => {
                     let x = self.measure.at(self.line.factor);
                     self.measure += m;
-                    let width = m.at(self.line.factor);
-                    return Some((x, Item::Object(key, width), tag));
+                    let size = Size::new(m.at(self.line.factor), m.height);
+                    return Some((x, size, Item::Object(key), tag));
+                }
+                Entry::Empty(tag) => {
+                    let x = self.measure.at(self.line.factor);
+                    let size = Size::zero();
+                    return Some((x, size, Item::Empty, tag));
                 }
                 Entry::BranchEntry(len) => {
                     if self.line.path & (1<<self.branches) == 0 {

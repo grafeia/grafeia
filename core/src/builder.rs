@@ -1,5 +1,4 @@
-use crate::{Storage, Sequence, TypeKey, Item, Type, Document, Object};
-use std::rc::Rc;
+use crate::{Storage, Sequence, TypeKey, Item, Type, LocalDocument, Object};
 
 pub struct ContentBuilder {
     storage: Storage,
@@ -48,10 +47,10 @@ impl ContentBuilder {
         self.items.push(Item::Object(key));
         self
     }
-    pub fn finish(mut self) -> Document {
+    pub fn finish(mut self) -> LocalDocument {
         let seq = Sequence::new(self.document_key, self.items);
         let root = self.storage.insert_sequence(seq);
-        Document::new(self.storage, root)
+        LocalDocument::new(self.storage, root)
     }
 }
 
@@ -64,6 +63,14 @@ impl TextBuilder {
     pub fn word(mut self, w: &str) -> Self {
         let word = self.parent.storage.insert_word(w);
         self.nodes.push(Item::Word(word));
+        self
+    }
+
+    pub fn text(mut self, text: &str) -> Self {
+        for w in text.split_ascii_whitespace() {
+            let word = self.parent.storage.insert_word(w);
+            self.nodes.push(Item::Word(word));
+        }
         self
     }
 
