@@ -296,6 +296,7 @@ impl App {
                 }
             }
             ItemPos::After => {
+                let valid_insert = cursor.tag.item().is_some();
                 match op {
                     TextOp::DeletePrevItem => {
                         let prev_tag = self.document.get_previous_tag_bounded(cursor.tag)?;
@@ -307,12 +308,12 @@ impl App {
                         self.document.remove(next_tag);
                         Some((cursor.tag, ItemPos::After))
                     }
-                    TextOp::Insert(c) => {
+                    TextOp::Insert(c) if valid_insert => {
                         let new_text = format!("{}", c);
                         let new_item = Item::Word(self.document.create_word(&new_text));
-                        self.document.insert(cursor.tag, new_item);
+                        let tag = self.document.insert(cursor.tag, new_item);
 
-                        Some((cursor.tag, ItemPos::Within(new_text.len())))
+                        Some((tag, ItemPos::Within(new_text.len())))
                     }
                     // place cursor at the end of the previous word
                     TextOp::DeletePrevGrapheme => {
@@ -324,7 +325,7 @@ impl App {
                             _ => None
                         }
                     }
-                    TextOp::NewSequence => {
+                    TextOp::NewSequence if valid_insert => {
                         let typ = self.document.get_weave(cursor.tag.seq()).typ();
                         let id = self.document.crate_seq(typ);
                         let item = Item::Sequence(id);
@@ -717,10 +718,12 @@ impl Interactive for NetworkApp {
         }
     }
     fn exit(&mut self) {
+        /*
         match self.state {
             NetworkState::Connected(ref mut app) => app.exit(),
             _ => {}
         }
+        */
     }
     fn save_state(&self, state: ViewState) {
         store_data("view", &bincode::serialize(&state).unwrap())

@@ -33,10 +33,15 @@ function blob2ArrayBuffer(blob) {
         reader.readAsArrayBuffer(blob);
     });
 }
+function ws_url() {
+    let location = window.location;
+    let protocol = { "http:": "ws:", "https:": "wss:" }[location.protocol];
+    return `${protocol}//${window.location.host}/log`;
+}
 function connect() {
     return new Promise(function(resolve, reject) {
         // Create WebSocket connection.
-        let socket = new WebSocket(`ws://${window.location.host}/log`);
+        let socket = new WebSocket(ws_url());
         // Connection opened
         socket.addEventListener('open', function (event) {
             socket.send('Hello Server!');
@@ -73,11 +78,6 @@ async function init() {
             log_err("can't connect logger");
         }
     }
-
-    log_err("init");
-    if (localStorage.getItem("reset")) {
-        localStorage.clear();
-    }
     log_err("ready for wasm");
     await wasm_bindgen("pkg/grafeia_web_bg.wasm").catch(function(e) {
         log_err(e);
@@ -91,13 +91,3 @@ async function init() {
     }
 }
 init();
-
-function test_unload() {
-    var event = document.createEvent('Event');
-    event.initEvent('unload', true, true);
-    window.dispatchEvent(event);
-}
-function reset() {
-    localStorage.setItem("reset", "reset");
-    window.location.reload();
-}

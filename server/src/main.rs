@@ -8,6 +8,7 @@ use std::sync::Mutex;
 use std::sync::Arc;
 use std::collections::HashMap;
 use std::borrow::Cow;
+use std::path::PathBuf;
 use bincode;
 
 #[macro_use] extern crate log;
@@ -123,6 +124,14 @@ fn load() -> State<'static> {
 async fn main() {
     env_logger::init();
     let document = load();
+    let http_root = match std::env::var("HTTP_ROOT") {
+        Ok(root) => PathBuf::from(root),
+        _ => PathBuf::from(env!("CARGO_MANIFEST_DIR")).parent().unwrap().join("web")
+    };
+    let port: u16 = match std::env::var("PORT") {
+        Ok(port) => port.parse().expect("PORT is not a number"),
+        _ => 8000
+    };
 
     let server = Arc::new(Mutex::new(Server::new(document)));
     let log = warp::path("log")
@@ -135,11 +144,11 @@ async fn main() {
     });
 
     let test = warp::path("test").and(warp::path::end())
-        .and(warp::fs::file("/home/sebk/Rust/grafeia/web/diag.html"));
+        .and(warp::fs::file(http_root.join("diag.html")));
 
-    let routes = log.or(test).or(warp::fs::dir("/home/sebk/Rust/grafeia/web"));
+    let routes = log.or(test).or(warp::fs::dir(http_root));
 
     warp::serve(routes)
-        .run(([0, 0, 0, 0], 8000))
+        .run(([0, 0, 0, 0], port))
         .await;
 }

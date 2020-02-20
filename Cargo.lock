@@ -612,6 +612,7 @@ checksum = "2fad85553e09a6f881f739c29f0b00b0f01357c743266d478b68951ce23285f3"
 [[package]]
 name = "font"
 version = "0.1.0"
+source = "git+https://github.com/pdf-rs/font#e5e81a216c84450f1b81e3dbc17417dbabf83f25"
 dependencies = [
  "brotli-decompressor",
  "decorum",
@@ -1350,7 +1351,7 @@ version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5cc7ad3d82c845bdb5dde34ffdcc7a5fb4d2996e1e1ee0f19c33bc80e15196b9"
 dependencies = [
- "num-traits 0.2.11",
+ "num-traits 0.1.43",
 ]
 
 [[package]]
@@ -1721,6 +1722,7 @@ dependencies = [
 [[package]]
 name = "pathfinder_color"
 version = "0.1.0"
+source = "git+https://github.com/s3bk/pathfinder/#e7782aa799189b2f02e17a0f75aba0024472cb30"
 dependencies = [
  "pathfinder_simd",
 ]
@@ -1728,6 +1730,7 @@ dependencies = [
 [[package]]
 name = "pathfinder_content"
 version = "0.1.0"
+source = "git+https://github.com/s3bk/pathfinder/#e7782aa799189b2f02e17a0f75aba0024472cb30"
 dependencies = [
  "arrayvec 0.5.1",
  "bitflags",
@@ -1742,7 +1745,7 @@ dependencies = [
 [[package]]
 name = "pathfinder_export"
 version = "0.1.0"
-source = "git+https://github.com/s3bk/pathfinder/#15f14599f2f808e3a1c5421dc6e554c138fee026"
+source = "git+https://github.com/s3bk/pathfinder/#e7782aa799189b2f02e17a0f75aba0024472cb30"
 dependencies = [
  "deflate 0.8.3",
  "pathfinder_color",
@@ -1754,6 +1757,7 @@ dependencies = [
 [[package]]
 name = "pathfinder_geometry"
 version = "0.4.0"
+source = "git+https://github.com/s3bk/pathfinder/#e7782aa799189b2f02e17a0f75aba0024472cb30"
 dependencies = [
  "log 0.4.8",
  "pathfinder_simd",
@@ -1762,6 +1766,7 @@ dependencies = [
 [[package]]
 name = "pathfinder_gl"
 version = "0.1.0"
+source = "git+https://github.com/s3bk/pathfinder/#e7782aa799189b2f02e17a0f75aba0024472cb30"
 dependencies = [
  "gl",
  "half",
@@ -1774,6 +1779,7 @@ dependencies = [
 [[package]]
 name = "pathfinder_gpu"
 version = "0.1.0"
+source = "git+https://github.com/s3bk/pathfinder/#e7782aa799189b2f02e17a0f75aba0024472cb30"
 dependencies = [
  "half",
  "image 0.22.5",
@@ -1785,6 +1791,7 @@ dependencies = [
 [[package]]
 name = "pathfinder_renderer"
 version = "0.1.0"
+source = "git+https://github.com/s3bk/pathfinder/#e7782aa799189b2f02e17a0f75aba0024472cb30"
 dependencies = [
  "bitflags",
  "byteorder",
@@ -1805,6 +1812,7 @@ dependencies = [
 [[package]]
 name = "pathfinder_resources"
 version = "0.1.0"
+source = "git+https://github.com/s3bk/pathfinder/#e7782aa799189b2f02e17a0f75aba0024472cb30"
 dependencies = [
  "half",
  "pathfinder_gpu",
@@ -1815,6 +1823,7 @@ dependencies = [
 [[package]]
 name = "pathfinder_simd"
 version = "0.4.0"
+source = "git+https://github.com/s3bk/pathfinder/#e7782aa799189b2f02e17a0f75aba0024472cb30"
 dependencies = [
  "rustc_version",
 ]
@@ -1822,6 +1831,7 @@ dependencies = [
 [[package]]
 name = "pathfinder_svg"
 version = "0.1.0"
+source = "git+https://github.com/s3bk/pathfinder/#e7782aa799189b2f02e17a0f75aba0024472cb30"
 dependencies = [
  "bitflags",
  "hashbrown",
@@ -1835,6 +1845,7 @@ dependencies = [
 [[package]]
 name = "pathfinder_ui"
 version = "0.1.0"
+source = "git+https://github.com/s3bk/pathfinder/#e7782aa799189b2f02e17a0f75aba0024472cb30"
 dependencies = [
  "hashbrown",
  "pathfinder_color",
@@ -1849,12 +1860,13 @@ dependencies = [
 [[package]]
 name = "pathfinder_view"
 version = "0.1.0"
+source = "git+https://github.com/s3bk/pathfinder_view#425e3c9e948ccf47b0753a95d87ace49057da149"
 dependencies = [
  "cfg-if",
  "gl",
  "glutin",
  "js-sys",
- "log 0.4.8",
+ "log 0.3.9",
  "pathfinder_color",
  "pathfinder_export",
  "pathfinder_geometry",
@@ -1871,6 +1883,7 @@ dependencies = [
 [[package]]
 name = "pathfinder_webgl"
 version = "0.1.0"
+source = "git+https://github.com/s3bk/pathfinder/#e7782aa799189b2f02e17a0f75aba0024472cb30"
 dependencies = [
  "image 0.21.3",
  "log 0.4.8",
@@ -2898,9 +2911,10 @@ checksum = "05e42f7c18b8f902290b009cde6d651262f956c98bc51bca4cd1d511c9cd85c7"
 [[package]]
 name = "vector"
 version = "0.1.0"
+source = "git+https://github.com/s3bk/vector/#6c506b4fccd2e23f5ae7c422bce39345addd6cc0"
 dependencies = [
  "itertools",
- "log 0.4.8",
+ "log 0.3.9",
  "pathfinder_color",
  "pathfinder_content",
  "pathfinder_geometry",
@@ -3176,6 +3190,7 @@ checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
 [[package]]
 name = "winit"
 version = "0.20.0"
+source = "git+https://github.com/s3bk/winit#41346348a0c38163f4c5dbab547aecfd2b5509d9"
 dependencies = [
  "android_glue",
  "bitflags",
