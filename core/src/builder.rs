@@ -1,30 +1,31 @@
-use crate::{Storage, Sequence, TypeKey, Item, Type, LocalDocument, Object};
+use crate::{Storage, TypeId, Item, Type, Document, Object};
 
 pub struct ContentBuilder {
-    storage: Storage,
-    para_key: TypeKey,
-    chapter_key: TypeKey,
-    document_key: TypeKey,
-
+    document: Document,
+    document_key: TypeId,
+    para_key: TypeId,
+    chapter_key: TypeId,
     items: Vec<Item>
 }
 impl ContentBuilder {
     pub fn new() -> Self {
-        let mut storage = Storage::new();
+        let storage = Storage::new();
+        let mut document = Document::new(storage);
+
         ContentBuilder {
-            para_key: storage.insert_type(
-                "paragraph",
-                Type::new("A Paragraph")
-            ),
-            chapter_key: storage.insert_type(
-                "chapter",
-                Type::new("A Chapter")
-            ),
-            document_key: storage.insert_type(
+            document_key: document.create_type(
                 "document",
                 Type::new("The Document")
             ),
-            storage,
+            para_key: document.create_type(
+                "paragraph",
+                Type::new("A Paragraph")
+            ),
+            chapter_key: document.create_type(
+                "chapter",
+                Type::new("A Chapter")
+            ),
+            document,
             items: vec![]
         }
     }
@@ -43,46 +44,45 @@ impl ContentBuilder {
         }
     }
     pub fn object(mut self, object: Object) -> Self {
-        let key = self.storage.insert_object(object);
+        let key = self.document.create_object(object);
         self.items.push(Item::Object(key));
         self
     }
-    pub fn finish(mut self) -> LocalDocument {
-        let seq = Sequence::new(self.document_key, self.items);
-        let root = self.storage.insert_sequence(seq);
-        LocalDocument::new(self.storage, root)
+    pub fn finish(mut self) -> Document {
+        let root = self.document.creat_seq_with_items(self.document_key, self.items.into_iter());
+        self.document.set_root(root);
+        self.document
     }
 }
 
 pub struct TextBuilder {
     parent: ContentBuilder,
-    typ:    TypeKey,
+    typ:    TypeId,
     nodes:  Vec<Item>
 }
 impl TextBuilder {
     pub fn word(mut self, w: &str) -> Self {
-        let word = self.parent.storage.insert_word(w);
+        let word = self.parent.document.create_word(w);
         self.nodes.push(Item::Word(word));
         self
     }
 
     pub fn text(mut self, text: &str) -> Self {
         for w in text.split_ascii_whitespace() {
-            let word = self.parent.storage.insert_word(w);
+            let word = self.parent.document.create_word(w);
             self.nodes.push(Item::Word(word));
         }
         self
     }
 
     pub fn object(mut self, object: Object) -> Self {
-        let key = self.parent.storage.insert_object(object);
+        let key = self.parent.document.create_object(object);
         self.nodes.push(Item::Object(key));
         self
     }
 
     pub fn finish(mut self) -> ContentBuilder {
-        let seq = Sequence::new(self.typ, self.nodes);
-        let key = self.parent.storage.insert_sequence(seq);
+        let key = self.parent.document.creat_seq_with_items(self.typ, self.nodes.into_iter());
         self.parent.items.push(Item::Sequence(key));
         self.parent
     }

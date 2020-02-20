@@ -13,14 +13,14 @@ use bincode;
 #[macro_use] extern crate log;
 
 struct Server {
-    document: GlobalDocument,
+    state: State<'static>,
     clients: HashMap<SiteId, Client>,
     last_id: SiteId
 }
 impl Server {
-    fn new(document: GlobalDocument) -> Self {
+    fn new(state: State<'static>) -> Self {
         Server {
-            document,
+            state,
             clients: HashMap::new(),
             last_id: SiteId(1)
         }
@@ -59,7 +59,7 @@ fn user_message(data: Vec<u8>, id: SiteId, server: &Arc<Mutex<Server>>) {
         ClientCommand::GetAll => {
             info!("GetAll @ {:?} -> Document", id);
             let mut s = server.lock().unwrap();
-            let msg = Message::binary(ServerCommand::Document(Cow::Borrowed(&s.document)).encode());
+            let msg = Message::binary(ServerCommand::Document(s.state.borrowed()).encode());
             s.respond(id, msg);
         }
         ClientCommand::Op(op) => {
@@ -76,7 +76,7 @@ fn user_message(data: Vec<u8>, id: SiteId, server: &Arc<Mutex<Server>>) {
                 }
                 true
             });
-            s.document.apply(op);
+            s.state.storage.to_mut().apply(op);
         }
     }
 }
@@ -111,16 +111,12 @@ async fn client_connected(ws: WebSocket, server: Arc<Mutex<Server>>) {
 }
 
 type Version = (u16, u16);
-type Data = (Target, Design, LocalDocument);
 
-fn load() -> GlobalDocument {
+fn load() -> State<'static> {
     let path = std::env::args().nth(1).expect("no file given");
     let data = std::fs::read(path).expect("can't open file");
-    let (version, data): (Version, Data) = bincode::deserialize(&data).expect("failed to decode");
-    let (target, design, document) = data;
-    let document = Document::from_local(document, SiteId(1));
-    let global = document.to_global(&target, &design);
-    global
+    let (version, state): (Version, State) = bincode::deserialize(&data).expect("failed to decode");
+    state
 }
 
 #[tokio::main]

@@ -113,18 +113,18 @@ impl Writer {
         self.state = right;
     }
 
-    pub fn word(&mut self, left: Glue, right: Glue, key: WordKey, measure: FlexMeasure, font: Font, tag: Tag) {
+    pub fn word(&mut self, left: Glue, right: Glue, key: WordId, measure: FlexMeasure, font: Font, tag: Tag) {
         self.push(left, right, Entry::Word(key, measure, font, tag));
     }
     pub fn space(&mut self, left: Glue, right: Glue, measure: FlexMeasure, breaking: bool) {
         self.push(left, right, Entry::Space(breaking, measure));
     }
-    pub fn object(&mut self, left: Glue, right: Glue, key: ObjectKey, measure: FlexMeasure, tag: Tag) {
+    pub fn object(&mut self, left: Glue, right: Glue, key: ObjectId, measure: FlexMeasure, tag: Tag) {
         self.push(left, right, Entry::Object(key, measure, tag));
     }
     pub fn empty(&mut self, left: Glue, right: Glue, tag: Tag) {
         self.push(left, right, Entry::Empty(tag));
-    } 
+    }
     
     #[inline(always)]
     pub fn promote(&mut self, glue: Glue) {

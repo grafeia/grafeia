@@ -35,9 +35,9 @@ impl FlexMeasure {
     /// factor = +1 => self.stretch
     pub fn at(&self, factor: f32) -> Length {
         (if factor < 0. {
-            (self.width - self.shrink)
+            self.width - self.shrink
         } else {
-            (self.stretch - self.width)
+            self.stretch - self.width
         } * factor) + self.width
     }
     

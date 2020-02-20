@@ -482,7 +482,6 @@ impl<'l, 'a: 'l> Iterator for Line<'l, 'a> {
                 },
                 Entry::BranchExit(skip) => self.pos += skip,
                 Entry::Linebreak(_) => unreachable!(),
-                _ => {}
             }
         }
         

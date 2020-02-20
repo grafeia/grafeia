@@ -1,6 +1,5 @@
-use std::fmt::{self, Debug};
-use crate::{WordKey, SymbolKey, ObjectKey, Font, Tag};
-use crate::units::Length;
+use std::fmt::Debug;
+use crate::{WordId, SymbolId, ObjectId, Font, Tag};
 
 // private mods
 mod glue;
@@ -38,13 +37,14 @@ pub struct Style {
 
 /// used as input to the line breaking algorithm
 #[derive(Debug)]
+#[allow(dead_code)]
 enum Entry {
     /// A single word (sequence of glyphs)
-    Word(WordKey, FlexMeasure, Font, Tag),
+    Word(WordId, FlexMeasure, Font, Tag),
     
     /// Punctuation ('"', ',', '.', '-', …)
     /// is positioned in the margin if at the beginning or end of the line
-    Punctuation(SymbolKey, FlexMeasure, Font, Tag),
+    Punctuation(SymbolId, FlexMeasure, Font, Tag),
     
     /// Continue on the next line (fill)
     Linebreak(bool),
@@ -54,7 +54,7 @@ enum Entry {
 
     Empty(Tag),
 
-    Object(ObjectKey, FlexMeasure, Tag),
+    Object(ObjectId, FlexMeasure, Tag),
     
     /// Somtimes there are different possiblites of representing something.
     /// A Branch solves this by splitting the stream in two parts.
@@ -77,9 +77,9 @@ enum Entry {
 
 /// result of the linebreaking algorithm
 pub enum Item {
-    Word(WordKey, Font),
-    Symbol(SymbolKey, Font),
-    Object(ObjectKey),
+    Word(WordId, Font),
+    Symbol(SymbolId, Font),
+    Object(ObjectId),
     Empty
 }
 

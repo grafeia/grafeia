@@ -1,6 +1,7 @@
 use serde::{Serialize, Deserialize};
 use crate::*;
 use std::borrow::Cow;
+use document::State;
 
 #[derive(Serialize, Deserialize)]
 pub enum ClientCommand {
@@ -20,7 +21,7 @@ impl ClientCommand {
 #[derive(Serialize, Deserialize)]
 pub enum ServerCommand<'a> {
     Welcome(SiteId),
-    Document(Cow<'a, GlobalDocument>),
+    Document(State<'a>),
     Op(Cow<'a, DocumentOp>)
 }
 impl<'a> ServerCommand<'a> {

@@ -7,7 +7,6 @@ struct DocxWriter<'a> {
     run: Vec<Text<'a>>
 }
 impl<'a> DocxWriter<'a> {
-    fn file_suffix() -> &'static str { "docx" }
     fn new() -> Self {
         DocxWriter {
             docx: Docx::default(),
@@ -37,8 +36,8 @@ impl<'a> DocxWriter<'a> {
     }
 }
 
-fn add_sequence<'a>(writer: &mut DocxWriter<'a>, storage: &'a Storage, key: SequenceKey, design: &'a Design) {
-    let seq = storage.get_sequence(key);
+fn add_sequence<'a>(writer: &mut DocxWriter<'a>, storage: &'a Storage, key: SequenceId, design: &'a Design) {
+    let seq = storage.get_weave(key);
 
     let type_design = design.get_type_or_default(seq.typ());
     match type_design.display {
@@ -46,10 +45,10 @@ fn add_sequence<'a>(writer: &mut DocxWriter<'a>, storage: &'a Storage, key: Sequ
         Display::Paragraph(_) | Display::Block => writer.flush_para(),
     }
 
-    for item in seq.items() {
+    for item in seq.render() {
         match item {
-            &Item::Word(key) => writer.word(&storage.get_word(key).text),
-            &Item::Sequence(key) => add_sequence(writer, storage, key, design),
+            Item::Word(key) => writer.word(&storage.get_word(key).text),
+            Item::Sequence(key) => add_sequence(writer, storage, key, design),
             _ => {}
         }
     }

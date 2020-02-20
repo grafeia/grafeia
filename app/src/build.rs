@@ -1,6 +1,7 @@
 use crate::app::App;
 use grafeia_core::*;
 use grafeia_core::builder::*;
+use std::borrow::Cow;
 
 pub fn build() -> App {
     info!("build()");
@@ -35,7 +36,9 @@ pub fn build() -> App {
         .finish();
 
     info!("reading font");
-    let font_face = document.add_font(&include_bytes!("../../data/Cormorant-Regular.ttf")[..]);
+    let font_face = document.add_font(
+        &include_bytes!("../../data/Cormorant-Regular.ttf")[..]
+    );
 
     info!("done reading font");
 
@@ -92,8 +95,13 @@ pub fn build() -> App {
     );
 
     let target = default_target();
-
-    App::from_state((target, design, document), SiteId(1))
+    let state = State {
+        root: document.root(),
+        storage: Cow::Owned(document.into_storage()),
+        design: Cow::Owned(design),
+        target: Cow::Owned(target),
+    };
+    App::from_state(state, SiteId(1))
 }
 
 pub fn default_target() -> Target {

@@ -19,7 +19,7 @@ Design
 */
 
 use std::collections::{HashMap};
-use std::fmt::{Debug};
+use std::fmt::{self, Debug};
 use std::borrow::Borrow;
 use std::io;
 use std::path::Path;
@@ -29,15 +29,11 @@ use pathfinder_content::outline::Outline;
 use serde::{Serialize, Deserialize, Serializer};
 
 use crate::layout::FlexMeasure;
-use crate::{
-    units::{Length, Rect},
-    Display, Color,
-};
-use crate::storage::*;
+use crate::{*};
 
 // possible design and information what it means
 // for example: plain text, a bullet list, a heading
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Type {
     pub description: String,
 }
@@ -74,6 +70,11 @@ impl FontFace {
         Ok(FontFace(Arc::new(inner)))
     }
 }
+impl Debug for FontFace {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Font({})", self.0.face.full_name().unwrap_or(""))
+    }
+}
 impl Serialize for FontFaceInner {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -100,6 +101,11 @@ impl Borrow<str> for Symbol {
     }
 }
 
+pub enum Direction {
+    LeftToRight,
+    RightToLeft
+}
+
 #[derive(Serialize, Deserialize)]
 #[derive(Hash, Eq, PartialEq, Debug, Clone)]
 pub struct Word {
@@ -115,10 +121,10 @@ impl Borrow<str> for Word {
 #[derive(Serialize, Deserialize)]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
 pub enum Item {
-    Word(WordKey),
-    Symbol(SymbolKey),
-    Sequence(SequenceKey),
-    Object(ObjectKey)
+    Word(WordId),
+    Symbol(SymbolId),
+    Sequence(SequenceId),
+    Object(ObjectId)
 }
 
 #[derive(Serialize, Deserialize)]
@@ -127,88 +133,61 @@ pub struct Attribute;
 
 #[derive(Serialize, Deserialize)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Tag {
-    pub seq: SequenceKey,
-    pub pos: SequencePos,
-}
-
-#[derive(Serialize, Deserialize)]
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub enum SequencePos {
-    At(usize),
-    End
+pub enum Tag {
+    Start(SequenceId),
+    Item(SequenceId, Id),
+    End(SequenceId)
 }
 impl Tag {
-    pub fn seq_and_idx(&self) -> Option<(SequenceKey, usize)> {
-        match self.pos {
-            SequencePos::At(idx) => Some((self.seq, idx)),
-            SequencePos::End => None
+    pub fn seq(&self) -> SequenceId {
+        match *self {
+            Tag::Start(s) | Tag::Item(s, _) | Tag::End(s) => s
         }
     }
-    pub fn end(seq: SequenceKey) -> Tag {
-        Tag {
-            seq,
-            pos: SequencePos::End
+    pub fn item(&self) -> Option<Id> {
+        match *self {
+            Tag::Item(_, i) => Some(i),
+            _ => None
         }
     }
-    pub fn at(seq: SequenceKey, idx: usize) -> Tag {
-        Tag {
-            seq,
-            pos: SequencePos::At(idx)
+    pub fn seq_and_item(&self) -> Option<(SequenceId, Id)> {
+        match *self {
+            Tag::Item(s, i) => Some((s, i)),
+            _ => None
         }
     }
 }
-
-#[derive(Serialize, Deserialize)]
-#[derive(Debug, Clone)]
-pub struct Sequence {
-    pub(crate) typ:   TypeKey,
-    pub(crate) items: Vec<Item>,
-    pub(crate) attrs: Vec<Attribute>
-}
-impl Sequence {
-    pub fn new(typ: TypeKey, items: Vec<Item>) -> Sequence {
-        Sequence { typ, items, attrs: vec![] }
-    }
-    pub fn items(&self) -> &[Item] {
-        &self.items
-    }
-    pub fn typ(&self) -> TypeKey {
-        self.typ
-    }
-}
-
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Design {
     name: String,
-    map: HashMap<TypeKey, TypeDesign>,
-    default: TypeDesign
+    map: HashMap<TypeId, TypeDesign>,
+    default: TypeDesign,
 }
 impl Design {
     pub fn new(name: String, default: TypeDesign) -> Self {
         Design {
             name,
             map: HashMap::new(),
-            default
+            default,
         }
     }
     pub fn name(&self) -> &str {
         self.name.as_str()
     }
-    pub fn set_type(&mut self, key: TypeKey, value: TypeDesign) {
+    pub fn set_type(&mut self, key: TypeId, value: TypeDesign) {
         self.map.insert(key, value);
     }
-    pub fn get_type(&self, key: TypeKey) -> Option<&TypeDesign> {
+    pub fn get_type(&self, key: TypeId) -> Option<&TypeDesign> {
         self.map.get(&key)
     }
-    pub fn get_type_or_default(&self, key: TypeKey) -> &TypeDesign {
+    pub fn get_type_or_default(&self, key: TypeId) -> &TypeDesign {
         self.map.get(&key).unwrap_or(&self.default)
     }
     pub fn default(&self) -> &TypeDesign {
         &self.default
     }
-    pub fn items<'s>(&'s self) -> impl Iterator<Item=(TypeKey, &TypeDesign)> + 's {
+    pub fn items<'s>(&'s self) -> impl Iterator<Item=(TypeId, &TypeDesign)> + 's {
         self.map.iter().map(|(&k, v)| (k, v))
     }
 }
@@ -227,7 +206,7 @@ pub struct TypeDesign {
 #[derive(Serialize, Deserialize)]
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
 pub struct Font {
-    pub font_face: FontFaceKey,
+    pub font_face: FontId,
     pub size: Length // height of 1em
 }
 

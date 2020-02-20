@@ -1,31 +1,55 @@
 use crate::*;
 use std::collections::HashMap;
-use std::ops::{RangeBounds, Deref, Add, Index};
-use std::cmp::{PartialEq, PartialOrd, Ordering};
+use std::ops::{Deref};
+use std::cmp::{PartialEq, PartialOrd};
 use std::hash::Hash;
 use std::fmt;
+use std::borrow::Cow;
+use itertools::Itertools;
 
 #[derive(Serialize, Deserialize)]
 #[derive(Hash, Eq, PartialEq, Copy, Clone, Default, PartialOrd, Ord, Debug)]
-pub struct SiteId(pub u16);
+pub struct SiteId(pub u32);
 
 #[derive(Serialize, Deserialize)]
-#[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Copy, Clone)]
-struct Id {
+#[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Copy, Clone, Hash)]
+pub struct Id {
     clock: u32,
     site:  SiteId,
 }
 impl Id {
-    const fn null() -> Id {
+    pub const fn null() -> Id {
         Id { clock: 0, site: SiteId(0) }
     }
-    fn is_null(&self) -> bool {
+    pub fn is_null(&self) -> bool {
         *self == Id::null()
     }
 }
 impl fmt::Display for Id {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}:{}", self.site.0, self.clock)
+    }
+}
+
+pub trait ClockValue: Default + Clone + Ord {
+    fn inc(self) -> Self;
+}
+impl ClockValue for u32 {
+    fn inc(self) -> Self { self + 1 }
+}
+
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
+pub struct Clock<T>(T);
+impl<T> Clock<T> where T: ClockValue {
+    pub fn new() -> Self {
+        Clock(T::default())
+    }
+    pub fn next(&mut self) -> T {
+        let t = self.0.clone().inc();
+        std::mem::replace(&mut self.0, t)
+    }
+    pub fn seen(&mut self, val: T) {
+        self.0 = self.0.clone().max(val);
     }
 }
 
@@ -37,16 +61,24 @@ pub struct Atom {
     id: Id,
 }
 
+pub trait Stamped<T> {
+    fn value(&self) -> T;
+    fn site(&self) -> SiteId;
+    fn new(site: SiteId, val: T) -> Self;
+}
+
 macro_rules! id {
     ($($name:ident),*) => ( $(
         #[derive(Serialize, Deserialize)]
         #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone, Hash)]
         pub struct $name(SiteId, u32);
 
-        impl From<(SiteId, u32)> for $name {
-            fn from((site, n): (SiteId, u32)) -> Self {
+        impl Stamped<u32> for $name {
+            fn new(site: SiteId, n: u32) -> Self {
                 $name(site, n)
             }
+            fn site(&self) -> SiteId { self.0 }
+            fn value(&self) -> u32 { self.1 }
         }
     )* )
 }
@@ -55,36 +87,32 @@ id!(WordId, SymbolId, ObjectId, SequenceId, TypeId, FontId);
 
 #[derive(Serialize, Deserialize)]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
-pub enum GlobalItem {
-    Word(WordId),
-    Symbol(SymbolId),
-    Sequence(SequenceId),
-    Object(ObjectId),
-}
-
-#[derive(Serialize, Deserialize)]
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
 pub enum AtomOp {
     Remove,
-    Replace(GlobalItem),
-    Add(GlobalItem),
+    Replace(Item),
+    Add(Item),
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
-struct Weave {
+pub struct Weave {
+    typ: TypeId,
     atoms: Vec<Atom>,
-    clock: u32
+    clock: Clock<u32>
 }
 impl Weave {
-    pub fn new() -> Weave {
+    pub fn new(typ: TypeId) -> Weave {
         Weave {
+            typ,
             atoms: Vec::new(),
-            clock: 0
+            clock: Clock::new()
         }
     }
-    fn from_items(site: SiteId, items: impl Iterator<Item=GlobalItem>) -> Weave {
+    pub fn typ(&self) -> TypeId {
+        self.typ
+    }
+    fn from_items(site: SiteId, typ: TypeId, items: impl Iterator<Item=Item>) -> Weave {
         let mut prev = Id::null();
-        let mut weave = Weave::new();
+        let mut weave = Weave::new(typ);
         for item in items {
             let atom = weave.create(site, prev, AtomOp::Add(item));
             prev = atom.id;
@@ -92,10 +120,11 @@ impl Weave {
         }
         weave
     }
-    fn create(&self, site: SiteId, prev: Id, op: AtomOp) -> Atom {
+    fn create(&mut self, site: SiteId, prev: Id, op: AtomOp) -> Atom {
+        let id = Id { site, clock: self.clock.next() };
         Atom {
             prev,
-            id: Id { site, clock: self.clock },
+            id,
             op
         }
     }
@@ -127,12 +156,12 @@ impl Weave {
         }
 
         self.atoms.insert(idx, atom);
-        self.clock = self.clock.max(atom.id.clock) + 1;
+        self.clock.seen(atom.id.clock);
     }
-    fn items<'s>(&'s self) -> impl Iterator<Item=(Id, GlobalItem)> + 's {
+    pub fn items<'s>(&'s self) -> impl Iterator<Item=(Id, Item)> + 's {
         use crate::gen::GenIter;
 
-        let mut pending: Option<(Id, GlobalItem)> = None;
+        let mut pending: Option<(Id, Item)> = None;
         GenIter::new(move || {
             for atom in self.atoms.iter() {
                 match atom.op {
@@ -161,29 +190,59 @@ impl Weave {
             }
         })
     }
-    fn render<'s>(&'s self) -> impl Iterator<Item=GlobalItem> + 's {
-        self.items().map(|(id, item)| item)
+    pub fn render<'s>(&'s self) -> impl Iterator<Item=Item> + 's {
+        self.items().map(|(_, item)| item)
     }
-    fn find(&self, idx: usize) -> Option<Id> {
-        self.items().nth(idx).map(|(id, item)| id)
+    pub fn get_item(&self, id: Id) -> Option<Item> {
+        self.atoms.iter().find(|atom| atom.id == id)
+        .and_then(|atom| match atom.op {
+            AtomOp::Add(item) | AtomOp::Replace(item) => Some(item),
+            _ => None
+        })
+    }
+    pub fn get_previous(&self, id: Id) -> Option<(Id, Item)> {
+        self.items().tuple_windows().find(|&(_, b)| b.0 == id).map(|(a, _)| a)
+    }
+    pub fn get_next(&self, id: Id) -> Option<(Id, Item)> {
+        self.items().tuple_windows().find(|&(a, _)| a.0 == id).map(|(_, b)| b)
+    }
+    pub fn get_first(&self) -> Option<(Id, Item)> {
+        self.items().next()
+    }
+    pub fn get_last(&self) -> Option<(Id, Item)> {
+        self.items().last()
     }
 }
 
-pub trait Inc {
-    fn inc(self) -> Self;
+#[derive(Serialize, Deserialize, Default, Clone)]
+struct Map<K: Eq + Hash, V> {
+    map: HashMap<K, V>,
+    clock: Clock<u32>,
 }
-impl Inc for u32 {
-    fn inc(self) -> Self { self + 1 }
-}
-#[derive(Default)]
-struct Counter<T>(T);
-impl<T> Counter<T> where T: Default + Inc + Clone {
+impl<K: Eq + Hash + Copy + Stamped<u32>, V> Map<K, V> {
     pub fn new() -> Self {
-        Counter(T::default())
+        Map {
+            map: HashMap::new(),
+            clock: Clock::new()
+        }
     }
-    pub fn next(&mut self) -> T {
-        let t = self.0.clone().inc();
-        std::mem::replace(&mut self.0, t)
+    pub fn create(&mut self, site: SiteId, value: V) -> K {
+        let key = K::new(site, self.clock.next());
+        self.map.insert(key, value);
+        key
+    }
+    pub fn insert(&mut self, key: K, value: V) {
+        self.map.insert(key, value);
+        self.clock.seen(key.value());
+    }
+    pub fn get(&self, key: K) -> Option<&V> {
+        self.map.get(&key)
+    }
+    pub fn get_mut(&mut self, key: K) -> Option<&mut V> {
+        self.map.get_mut(&key)
+    }
+    pub fn iter(&self) -> impl Iterator<Item=(K, &V)> {
+        self.map.iter().map(|(&k, v)| (k, v))
     }
 }
 
@@ -191,280 +250,301 @@ impl<T> Counter<T> where T: Default + Inc + Clone {
 pub enum DocumentOp {
     SeqOp(SequenceId, Atom),
     CreateSequence(SequenceId, TypeId),
-    CreateWord(WordId, String)
+    CreateWord(WordId, Word),
+    CreateType(TypeId, String, Type),
+    CreateFont(FontId, FontFace),
+    CreateObject(ObjectId, Object)
 }
 
-#[derive(Serialize, Deserialize)]
-pub struct LocalDocument {
-    storage: Storage,
-    root: SequenceKey,
-    parents: HashMap<SequenceKey, SequenceKey>,
+#[derive(Serialize, Deserialize, Clone)]
+pub struct Storage {
+    weaves:  Map<SequenceId, Weave>,
+    words:   Map<WordId,     Word>,
+    symbols: Map<SymbolId,   Symbol>,
+    objects: Map<ObjectId,   Object>,
+    types:   Map<TypeId,     Type>,
+    type_names: HashMap<String, TypeId>,
+    fonts:   Map<FontId,     FontFace>,
+
+    sites:   Clock<u32>
 }
-impl Deref for LocalDocument {
+
+impl Storage {
+    pub fn new() -> Self {
+        Storage {
+            weaves: Map::new(),
+            words: Map::new(),
+            symbols: Map::new(),
+            objects: Map::new(),
+            types: Map::new(),
+            type_names: HashMap::new(),
+            fonts: Map::new(),
+            sites: Clock::new()
+        }
+    }
+    pub fn apply(&mut self, doc_op: DocumentOp) {
+        match doc_op {
+            DocumentOp::SeqOp(id, op) => {
+                self.weaves.get_mut(id).unwrap().add(op);
+            }
+            DocumentOp::CreateSequence(id, typ) => {
+                self.weaves.insert(id, Weave::new(typ));
+            }
+            DocumentOp::CreateWord(id, word) => {
+                self.words.insert(id, word);
+            }
+            DocumentOp::CreateObject(id, object) => {
+                self.objects.insert(id, object);
+            }
+            DocumentOp::CreateFont(id, font) => {
+                self.fonts.insert(id, font);
+            }
+            DocumentOp::CreateType(id, name, typ) => {
+                self.types.insert(id, typ);
+                self.type_names.insert(name, id);
+            }
+        }
+    }
+
+    pub fn log_weave(&self, id: SequenceId) {
+        let weave = self.weaves.get(id).unwrap();
+        let item = |item: Item| match item {
+            Item::Word(key) => self.words.get(key).unwrap().text.as_str(),
+            Item::Symbol(key) => self.symbols.get(key).unwrap().text.as_str(),
+            Item::Sequence(_) => "<seq>",
+            Item::Object(_) => "<obj>",
+        };
+
+        for atom in weave.atoms.iter() {
+            match atom.op {
+                AtomOp::Remove => info!("{} Remove {}", atom.id, atom.prev),
+                AtomOp::Replace(id) => info!("{} Replace({}) {}", atom.id, item(id), atom.prev),
+                AtomOp::Add(id) => info!("{} Add({}) {}", atom.id, item(id), atom.prev),
+            }
+        }
+    }
+    pub fn get_item(&self, tag: Tag) -> Option<Item> {
+        let weave = self.weaves.get(tag.seq())?;
+        weave.get_item(tag.item()?)
+    }
+    pub fn get_word(&self, id: WordId) -> &Word {
+        self.words.get(id).unwrap()
+    }
+    pub fn get_symbol(&self, id: SymbolId) -> &Symbol {
+        self.symbols.get(id).unwrap()
+    }
+    pub fn get_object(&self, id: ObjectId) -> &Object {
+        self.objects.get(id).unwrap()
+    }
+    pub fn get_font_face(&self, id: FontId) -> &FontFace {
+        self.fonts.get(id).unwrap()
+    }
+    pub fn get_weave(&self, id: SequenceId) -> &Weave {
+        self.weaves.get(id).unwrap()
+    }
+
+    pub fn get_last(&self, seq_id: SequenceId) -> Option<(Tag, Item)> {
+        self.weaves.get(seq_id).unwrap().items()
+            .last()
+            .map(|(item_id, item)| (Tag::Item(seq_id, item_id), item))
+    }
+    pub fn get_first(&self, seq_id: SequenceId) -> Option<(Tag, Item)> {
+        self.weaves.get(seq_id).unwrap().items().next()
+            .map(|(item_id, item)| (Tag::Item(seq_id, item_id), item))
+    }
+    pub fn find_type(&self, name: &str) -> Option<TypeId> {
+        self.type_names.get(name).cloned()
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct State<'a> {
+    pub target: Cow<'a, Target>,
+    pub design: Cow<'a, Design>,
+    pub storage: Cow<'a, Storage>,
+    pub root: SequenceId
+}
+impl<'a> State<'a> {
+    pub fn borrowed<'b: 'a>(&'b self) -> State<'b> {
+        use std::borrow::Borrow;
+        State {
+            target: Cow::Borrowed(self.target.borrow()),
+            design: Cow::Borrowed(self.design.borrow()),
+            storage: Cow::Borrowed(self.storage.borrow()),
+            root: self.root
+        }
+    }
+}
+
+pub struct Document {
+    storage: Storage,
+    site: SiteId,
+    pending: Vec<DocumentOp>,
+    parents: HashMap<SequenceId, Tag>,
+    words: HashMap<String, WordId>,
+    root: Option<SequenceId>,
+}
+impl Deref for Document {
     type Target = Storage;
     fn deref(&self) -> &Storage {
         &self.storage
     }
 }
 
-#[derive(Serialize, Deserialize, Clone)]
-struct GloblDesign {
-    default: TypeDesign,
-    entries: HashMap<TypeId, TypeDesign>,
-    name:    String
-}
+impl Document {
+    pub fn new(storage: Storage) -> Document {
+        let site = SiteId(1);
+        let pending = Vec::new();
+        let parents = HashMap::new();
+        let words = HashMap::new();
 
-#[derive(Serialize, Deserialize, Clone)]
-pub struct GlobalDocument {
-    root:    SequenceId,
-    weaves:  HashMap<SequenceId, (Weave, TypeId)>,
-    words:   HashMap<WordId,     String>,
-    symbols: HashMap<SymbolId,   String>,
-    objects: HashMap<ObjectId,   Object>,
-    types:   HashMap<TypeId,     (Type, String)>,
-    fonts:   HashMap<FontId,     FontFace>,
-    target:  Target,
-    design:  GloblDesign
-}
-impl GlobalDocument {
-    pub fn apply(&mut self, doc_op: DocumentOp) {
-        match doc_op {
-            DocumentOp::SeqOp(id, op) => {
-                self.weaves.get_mut(&id).unwrap().0.add(op);
+        Document {
+            storage,
+            site,
+            pending,
+            parents,
+            words,
+            root: None,
+        }
+    }
+    pub fn set_root(&mut self, root: SequenceId) {
+        self.root = Some(root);
+    }
+    pub fn from_storage(storage: Storage, root: SequenceId, site: SiteId) -> Document {
+        let mut parents = HashMap::new();
+        for (seq_id, weave) in storage.weaves.iter() {
+            for (item_id, item) in weave.items() {
+                if let Item::Sequence(child_id) = item {
+                    parents.insert(child_id, Tag::Item(seq_id, item_id));
+                }
             }
-            DocumentOp::CreateSequence(id, typ) => {
-                self.weaves.insert(id, (Weave::new(), typ));
+        }
+        
+        let words = storage.words.iter().map(|(id, word)| (word.text.clone(), id)).collect();
+
+        Document {
+            site,
+            storage,
+            pending: Vec::new(),
+            parents,
+            words,
+            root: Some(root)
+        }
+    }
+    pub fn root(&self) -> SequenceId {
+        self.root.expect("root not set")
+    }
+    pub fn into_storage(self) -> Storage {
+        self.storage
+    }
+    pub fn storage(&self) -> &Storage {
+        &self.storage
+    }
+    pub fn drain_pending<'s>(&'s mut self) -> impl Iterator<Item=DocumentOp> + 's {
+        self.pending.drain(..)
+    }
+
+    pub fn exec_op(&mut self, op: DocumentOp) {
+        match op {
+            DocumentOp::SeqOp(id, atom) => {
+                let weave = self.storage.weaves.get_mut(id).unwrap();
+                weave.add(atom);
+                match atom.op {
+                    AtomOp::Add(Item::Sequence(_)) | AtomOp::Replace(Item::Sequence(_)) => {
+                        self.link(Tag::Item(id, atom.id));
+                    }
+                    _ => {}
+                }
             }
-            DocumentOp::CreateWord(id, word) => {
-                self.words.insert(id, word);
+            _ => {}
+        }
+        self.storage.apply(op);
+    }
+
+    pub fn replace(&mut self, tag: Tag, new_item: Item) -> Tag {
+        self.unlink(tag);
+        let (seq, id) = tag.seq_and_item().unwrap();
+
+        let weave = self.storage.weaves.get_mut(seq).unwrap();
+        let atom = weave.create(self.site, id, AtomOp::Replace(new_item));
+        weave.add(atom);
+        self.storage.log_weave(seq);
+        self.pending.push(DocumentOp::SeqOp(seq, atom));
+
+        self.link(tag);
+        Tag::Item(seq, atom.id)
+    }
+
+    pub fn remove(&mut self, tag: Tag) {
+        self.unlink(tag);
+        let (seq, id) = tag.seq_and_item().unwrap();
+
+        let weave = self.storage.weaves.get_mut(seq).unwrap();
+        let atom = weave.create(self.site, id, AtomOp::Remove);
+        weave.add(atom);
+
+        info!("remove {} from {:?}", id, seq);
+        self.storage.log_weave(seq);
+        self.pending.push(DocumentOp::SeqOp(seq, atom));
+    }
+
+    pub fn insert(&mut self, tag: Tag, new_item: Item) -> Tag {
+        let (seq, prev_id) = match tag {
+            Tag::Start(seq) => (seq, Id::null()),
+            Tag::Item(seq, item) => (seq, item),
+            Tag::End(_) => panic!("not a valid insert location")
+        };
+        info!("insert {:?} at {} into {:?}", new_item, prev_id, seq);
+        let weave = self.storage.weaves.get_mut(seq).unwrap();
+
+        let atom = weave.create(self.site, prev_id, AtomOp::Add(new_item));
+        weave.add(atom);
+        self.storage.log_weave(seq);
+        self.pending.push(DocumentOp::SeqOp(seq, atom));
+
+        self.link(tag);
+        Tag::Item(seq, atom.id)
+    }
+
+    pub fn create_word(&mut self, text: &str) -> WordId {
+        match self.words.get(text) {
+            Some(&id) => id,
+            None => {
+                let word = Word { text: text.into() };
+                let id = self.storage.words.create(self.site, word.clone());
+                self.words.insert(text.into(), id);
+                self.pending.push(DocumentOp::CreateWord(id, word));
+                id
             }
         }
     }
-}
-struct KeyMap<Key, Id> {
-    forward: HashMap<Key, Id>,
-    reverse: HashMap<Id, Key>,
-    counter: Counter<u32>
-}
-impl<Key: Eq + Hash, Id: Eq + Hash> Default for KeyMap<Key, Id> {
-    fn default() -> Self {
-        KeyMap {
-            forward: HashMap::new(),
-            reverse: HashMap::new(),
-            counter: Counter(0)
-        }
-    }
-}
-impl<Key: Eq + Hash + Copy, Id: Eq + Hash + Copy + From<(SiteId, u32)>> KeyMap<Key, Id> {
-    pub fn insert(&mut self, key: Key, id: Id) {
-        self.forward.entry(key).or_insert(id);
-        self.reverse.entry(id).or_insert(key);
-    }
-    pub fn id_for_key(&self, key: Key) -> Option<Id> {
-        self.forward.get(&key).cloned()
-    }
-    pub fn key_for_id(&self, id: Id) -> Option<Key> {
-        self.reverse.get(&id).cloned()
-    }
-    pub fn add_local(&mut self, site: SiteId, key: Key) -> Id {
-        let id = Id::from((site, self.counter.next()));
-        self.forward.insert(key, id);
-        self.reverse.insert(id, key);
+
+    pub fn crate_seq(&mut self, typ: TypeId) -> SequenceId {
+        let id = self.storage.weaves.create(self.site, Weave::new(typ));
+        self.pending.push(DocumentOp::CreateSequence(id, typ));
         id
     }
-}
-
-#[derive(Default)]
-struct Map {
-    sequences: KeyMap<SequenceKey, SequenceId>,
-    words: KeyMap<WordKey, WordId>,
-    symbols: KeyMap<SymbolKey, SymbolId>,
-    objects: KeyMap<ObjectKey, ObjectId>,
-    types: KeyMap<TypeKey, TypeId>,
-    fonts: KeyMap<FontFaceKey, FontId>,
-}
-impl Map {
-    fn to_global(&self, item: Item) -> GlobalItem {
-        match item {
-            Item::Word(key) => GlobalItem::Word(self.words.id_for_key(key).unwrap()),
-            Item::Symbol(key) => GlobalItem::Symbol(self.symbols.id_for_key(key).unwrap()),
-            Item::Object(key) => GlobalItem::Object(self.objects.id_for_key(key).unwrap()),
-            Item::Sequence(key) => GlobalItem::Sequence(self.sequences.id_for_key(key).unwrap()),
-        }
+    pub fn creat_seq_with_items(&mut self, typ: TypeId, items: impl IntoIterator<Item=Item>) -> SequenceId {
+        let id = self.storage.weaves.create(self.site, Weave::from_items(self.site, typ, items.into_iter()));
+        self.pending.push(DocumentOp::CreateSequence(id, typ));
+        id
     }
-    fn to_local(&self, item: GlobalItem) -> Item {
-        let g_item = match item {
-            GlobalItem::Word(id) => self.words.key_for_id(id).map(Item::Word),
-            GlobalItem::Symbol(id) => self.symbols.key_for_id(id).map(Item::Symbol),
-            GlobalItem::Object(id) => self.objects.key_for_id(id).map(Item::Object),
-            GlobalItem::Sequence(id) => self.sequences.key_for_id(id).map(Item::Sequence),
-        };
-        g_item.unwrap()
-    }
-    fn add_local(&mut self, site: SiteId, item: Item) -> GlobalItem {
-        match item {
-            Item::Word(key) => {
-                GlobalItem::Word(self.words.add_local(site, key))
-            }
-            Item::Symbol(key) => {
-                GlobalItem::Symbol(self.symbols.add_local(site, key))
-            }
-            Item::Object(key) => {
-                GlobalItem::Object(self.objects.add_local(site, key))
-            }
-            Item::Sequence(key) => {
-                GlobalItem::Sequence(self.sequences.add_local(site, key))
-            }
-        }
-    }
-}
-
-pub struct Document {
-    local: LocalDocument,
-    weaves: HashMap<SequenceId, Weave>,
-    site: SiteId,
-    pending: Vec<DocumentOp>,
-    map: Map
-}
-
-fn walk(storage: &Storage, parent: SequenceKey, f: &mut impl FnMut(SequenceKey, SequenceKey)) {
-    for item in storage.get_sequence(parent).items() {
-        if let Item::Sequence(child) = *item {
-            f(parent, child);
-            walk(storage, child, f);
-        }
-    }
-}
-
-impl LocalDocument {
-    pub fn new(storage: Storage, root: SequenceKey) -> LocalDocument {
-        // set the parent fields of all sequences
-        let mut parents = HashMap::new();
-        walk(&storage, root, &mut |parent, child| {
-            parents.insert(child, parent);
-        });
-        
-        LocalDocument {
-            storage,
-            root,
-            parents,
-        }
-    }
-    pub fn root(&self) -> SequenceKey {
-        self.root
-    }
-    fn link(&mut self, tag: Tag) {
-        if let SequencePos::At(idx) = tag.pos {
-            let seq = self.storage.get_sequence(tag.seq);
-            if let Item::Sequence(child) = seq.items[idx] {
-                if self.parents.insert(child, tag.seq) != Some(tag.seq) {
-                    let parents = &mut self.parents;
-                    walk(&self.storage, child, &mut |parent, child| {
-                        parents.insert(child, parent);
-                    });
-                }
-            }
-        }
-    }
-    fn unlink(&mut self, tag: Tag) {
-        if let SequencePos::At(idx) = tag.pos {
-            let seq = self.storage.get_sequence(tag.seq);
-            if let Item::Sequence(child) = seq.items[idx] {
-                self.parents.remove(&child);
-            }
-        }
-    }
-    pub fn get_last(&self, key: SequenceKey) -> Tag {
-        let seq = self.storage.get_sequence(key);
-        let num_childs = seq.items.len();
-        if num_childs == 0 {
-            return Tag::end(key);
-        }
-        match seq.items[num_childs - 1] {
-            Item::Sequence(child_key) => self.get_last(child_key),
-            _ => Tag::at(key, num_childs - 1)
-        }
-    }
-    pub fn get_first(&self, key: SequenceKey) -> Tag {
-        let seq = self.storage.get_sequence(key);
-        let num_childs = seq.items().len();
-        if num_childs == 0 {
-            return Tag::end(key);
-        }
-        match seq.items[0] {
-            Item::Sequence(child_key) => self.get_first(child_key),
-            _ => Tag::at(key, 0)
-        }
-    }
-
-    pub fn get_previous_tag(&self, tag: Tag) -> Option<Tag> {
-        let seq = self.storage.get_sequence(tag.seq);
-        let idx = match tag.pos {
-            SequencePos::At(idx) => idx,
-            SequencePos::End => seq.items.len()
-        };
-
-        if idx > 0 {
-            match seq.items[idx - 1] {
-                Item::Sequence(child_key) => return Some(self.get_last(child_key)),
-                _ => return Some(Tag::at(tag.seq, idx - 1))
-            }
-        }
-
-        let &parent_key = self.parents.get(&tag.seq)?;
-        let parent = self.storage.get_sequence(parent_key);
-        let pos = parent.items.iter().position(|i| *i == Item::Sequence(tag.seq))?;
-        Some(Tag::at(parent_key, pos))
-    }
-    pub fn get_next_tag(&self, tag: Tag) -> Option<Tag> {
-        let seq = self.storage.get_sequence(tag.seq);
-        if let SequencePos::At(idx) = tag.pos {
-            if let Item::Sequence(key) = seq.items[idx] {
-                let child_seq = self.storage.get_sequence(key);
-                if child_seq.items.len() > 0 {
-                    return Some(Tag::at(key, 0));
-                } else {
-                    return Some(Tag::end(key));
-                }
-            }
-            if idx + 1 < seq.items.len() {
-                return Some(Tag::at(tag.seq, idx + 1));
-            } else {
-                return Some(Tag::end(tag.seq));
-            }
-        }
-
-        let &parent_key = self.parents.get(&tag.seq)?;
-        let parent = self.storage.get_sequence(parent_key);
-        let pos = parent.items.iter().position(|i| *i == Item::Sequence(tag.seq))?;
-        if pos + 1 < parent.items.len() {
-            Some(Tag::at(parent_key, pos + 1))
-        } else {
-            Some(Tag::end(parent_key))
-        }
-    }
-    pub fn get_parent_tag(&self, tag: Tag) -> Option<Tag> {
-        let &parent_key = self.parents.get(&tag.seq)?;
-        let parent = self.storage.get_sequence(parent_key);
-        let pos = parent.items.iter().position(|i| *i == Item::Sequence(tag.seq))?;
-        Some(Tag::at(parent_key, pos))
-    }
-    pub fn childen<'s>(&'s self, parent: SequenceKey) -> impl Iterator<Item=Tag> + 's {
+    pub fn childen<'s>(&'s self, parent: SequenceId) -> impl Iterator<Item=Tag> + 's {
         use crate::gen::GenIter;
         let storage = &self.storage;
         GenIter::new(move || {
             let mut stack = vec![];
-            let traverse = move |key| (key, storage.get_sequence(parent).items.iter().enumerate());
+            let traverse = move |key| (key, storage.weaves.get(parent).unwrap().items());
 
             let mut current = traverse(parent);
 
             loop {
-                while let Some((idx, item)) = current.1.next() {
-                    if let Item::Sequence(child) = *item {
+                while let Some((item_id, item)) = current.1.next() {
+                    if let Item::Sequence(child) = item {
                         stack.push(std::mem::replace(&mut current, traverse(child)));
                         continue;
                     } else {
-                        yield Tag::at(current.0, idx);
+                        yield Tag::Item(current.0, item_id);
                     }
                 }
                 if let Some(parent_iter) = stack.pop() {
@@ -476,306 +556,99 @@ impl LocalDocument {
         })
     }
 
-    pub fn add_font(&mut self, data: impl Into<Vec<u8>>) -> FontFaceKey {
-        self.storage.insert_font_face(FontFace::from_data(data.into()))
+    pub fn create_type(&mut self, name: &str, typ: Type) -> TypeId {
+        let id = self.storage.types.create(self.site, typ.clone());
+        self.storage.type_names.insert(name.to_owned(), id);
+        self.pending.push(DocumentOp::CreateType(id, name.into(), typ));
+        id
     }
-}
-impl Deref for Document {
-    type Target = LocalDocument;
-    fn deref(&self) -> &LocalDocument {
-        &self.local
+    pub fn create_object(&mut self, object: Object) -> ObjectId {
+        let id = self.storage.objects.create(self.site, object.clone());
+        self.pending.push(DocumentOp::CreateObject(id, object));
+        id
     }
-}
-
-
-impl Document {
-    pub fn local(&self) -> &LocalDocument {
-        &self.local
+    pub fn add_font(&mut self, data: impl Into<Vec<u8>>) -> FontId {
+        let font = FontFace::from_data(data.into());
+        let id = self.storage.fonts.create(self.site, font.clone());
+        self.pending.push(DocumentOp::CreateFont(id, font));
+        id
     }
-    pub fn from_local(local: LocalDocument, site: SiteId) -> Document {
-        let mut map = Map::default();
+    
 
-        for (key, _) in local.storage.words() {
-            map.words.add_local(site, key);
+    fn link(&mut self, tag: Tag) {
+        if let Some(Item::Sequence(child_id)) = self.storage.get_item(tag) {
+            self.parents.insert(child_id, tag);
         }
-        for (key, _) in local.storage.symbols() {
-            map.symbols.add_local(site, key);
+    }
+    fn unlink(&mut self, tag: Tag) {
+        if let Some(Item::Sequence(child_id)) = self.storage.get_item(tag) {
+            self.parents.remove(&child_id);
         }
-        for (key, _) in local.storage.objects() {
-            map.objects.add_local(site, key);
-        }
-        for (key, _, _) in local.storage.types() {
-            map.types.add_local(site, key);
-        }
-        for (key, _) in local.storage.fonts() {
-            map.fonts.add_local(site, key);
-        }
-        for (key, _) in local.storage.sequences() {
-            map.sequences.add_local(site, key);
-        }
-
-        let mut weaves = HashMap::new();
-        let mut add_seq = |seq: SequenceKey| {
-            let id = map.sequences.id_for_key(seq).unwrap();
-            let weave = Weave::from_items(site,
-                local.storage.get_sequence(seq).items.iter()
-                .map(|&item| map.to_global(item))
-            );
-            weaves.insert(id, weave);
+    }
+    pub fn get_previous_tag_bounded(&self, tag: Tag) -> Option<Tag> {
+        let weave = self.storage.get_weave(tag.seq());
+        let prev = match tag {
+            Tag::Start(_) => return None,
+            Tag::Item(_, id) => match weave.get_item(id).unwrap() {
+                Item::Sequence(child) => return Some(Tag::End(child)),
+                _ => weave.get_previous(id)
+            }
+            Tag::End(_) => weave.get_last(),
         };
-
-        add_seq(local.root);
-        walk(&local.storage, local.root, &mut |parent, child| add_seq(child));
-
-        Document {
-            site,
-            map,
-            weaves,
-            local,
-            pending: Vec::new()
+        match prev {
+            Some((id, _)) => Some(Tag::Item(tag.seq(), id)),
+            None => Some(Tag::Start(tag.seq()))
         }
     }
-    pub fn from_global(global: GlobalDocument, site: SiteId) -> (Document, Target, Design) {
-        let mut storage = Storage::new();
-        let mut map = Map::default();
-        for (id, (typ, name)) in global.types {
-            map.types.insert(storage.insert_type(name, typ), id);
-        }
-        for (id, word) in global.words {
-            map.words.insert(storage.insert_word(&word), id);
-        }
-        for (id, symbol) in global.symbols {
-            map.symbols.insert(storage.insert_symbol(&symbol), id);
-        }
-        for (id, object) in global.objects {
-            map.objects.insert(storage.insert_object(object.clone()), id);
-        }
-        for (id, font) in global.fonts {
-            map.fonts.insert(storage.insert_font_face(font.clone()), id);
-        }
-        let mut weaves = HashMap::new();
-        for (id, (weave, typ_id)) in global.weaves {
-            info!("weave {:?} {:?}", id, weave);
-            let typ = map.types.key_for_id(typ_id).unwrap();
-            map.sequences.insert(storage.insert_sequence(Sequence::new(typ, vec![])), id);
-            weaves.insert(id, weave);
-        }
-        for (&id, weave) in weaves.iter() {
-            let key = map.sequences.key_for_id(id).unwrap();
-            let seq = storage.get_sequence_mut(key);
-            seq.items.extend(
-                weave.render().map(|item| map.to_local(item))
-            );
-            info!("weave: {:#?}", weave);
-            info!("-> sequence: {:?}", seq);
+    pub fn get_previous_tag(&self, tag: Tag) -> Option<Tag> {
+        if let Some(tag) = self.get_previous_tag_bounded(tag) {
+            return Some(tag);
         }
 
-        let mut design = Design::new(global.design.name, global.design.default);
-        for (id, typ) in global.design.entries {
-            let key = map.types.key_for_id(id).unwrap();
-            design.set_type(key, typ);
+        // from here on things can fail, in which case ther is no previous tag
+
+        // no parent -> we are at the root (or in an unlinked node…)
+        let parent_tag = self.parents.get(&tag.seq())?;
+        let parent_seq = parent_tag.seq();
+        let parent = self.storage.get_weave(parent_seq);
+        let parent_item_id = parent_tag.item().unwrap();
+        match parent.get_previous(parent_item_id) {
+            Some((id, _)) => return Some(Tag::Item(parent_seq, id)),
+            None => return Some(Tag::Start(parent_seq))
         }
-
-        let root = map.sequences.key_for_id(global.root).unwrap();
-        let local = LocalDocument::new(storage, root);
-
-        let document = Document {
-            site,
-            local,
-            map,
-            pending: Vec::new(),
-            weaves
+    }
+    pub fn get_next_tag_bounded(&self, tag: Tag) -> Option<Tag> {
+        let weave = self.storage.get_weave(tag.seq());
+        let next = match tag {
+            Tag::Start(_) => weave.get_first(),
+            Tag::Item(_, id) => weave.get_next(id),
+            Tag::End(_) => return None,
         };
-
-        (document, global.target, design)
-    }
-    pub fn to_global(&self, target: &Target, design: &Design) -> GlobalDocument {
-        let map = &self.map;
-        let local = &self.local;
-        let weaves = self.weaves.iter().map(|(&id, weave)| {
-            let seq_key = map.sequences.key_for_id(id).unwrap();
-            let typ_key = self.storage.get_sequence(seq_key).typ();
-            let typ_id = map.types.id_for_key(typ_key).unwrap();
-            (id, (weave.clone(), typ_id))
-        }).collect();
-
-        GlobalDocument {
-            root: map.sequences.id_for_key(local.root).unwrap(),
-            weaves,
-            words:   local.storage.words().map(|(key, word)|
-                (map.words.id_for_key(key).unwrap(), word.text.clone())
-            ).collect(),
-            symbols: local.storage.symbols().map(|(key, symbol)|
-                (map.symbols.id_for_key(key).unwrap(), symbol.text.clone())
-            ).collect(),
-            objects: local.storage.objects().map(|(key, object)|
-                (map.objects.id_for_key(key).unwrap(), object.clone())
-            ).collect(),
-            types:   local.storage.types().map(|(key, name, typ)|
-                (map.types.id_for_key(key).unwrap(), (typ.clone(), name.to_owned()))
-            ).collect(),
-            fonts:   local.storage.fonts().map(|(key, font)|
-                (map.fonts.id_for_key(key).unwrap(), font.clone())
-            ).collect(),
-            target:  target.clone(),
-            design: GloblDesign {
-                name:    design.name().to_owned(),
-                entries: design.items().map(|(key, typ)|
-                    (map.types.id_for_key(key).unwrap(), typ.clone())
-                ).collect(),
-                default: design.default().clone(),
-            }
+        match next {
+            Some((_, Item::Sequence(child))) => Some(Tag::Start(child)),
+            Some((id, _)) => Some(Tag::Item(tag.seq(), id)),
+            None => Some(Tag::End(tag.seq()))
         }
     }
-    fn add_pending(&mut self, seq_key: SequenceKey, atom: Atom) {
-        let id = self.map.sequences.id_for_key(seq_key).unwrap();
-        self.pending.push(DocumentOp::SeqOp(id, atom));
-    }
-    pub fn drain_pending<'s>(&'s mut self) -> impl Iterator<Item=DocumentOp> + 's {
-        self.pending.drain(..)
-    }
+    pub fn get_next_tag(&self, tag: Tag) -> Option<Tag> {
+        if let Some(tag) = self.get_next_tag_bounded(tag) {
+            return Some(tag);
+        }
 
-    pub fn exec_op(&mut self, op: DocumentOp) {
-        match op {
-            DocumentOp::SeqOp(seq_id, atom) => {
-                let weave = self.weaves.get_mut(&seq_id).unwrap();
-                weave.add(atom);
-                let map = &self.map;
-                let seq_key = self.map.sequences.key_for_id(seq_id).unwrap();
-                let seq = self.local.storage.get_sequence_mut(seq_key);
-                seq.items.clear();
-                seq.items.extend(
-                    weave.render().map(|item| map.to_local(item))
-                );
-            }
-            DocumentOp::CreateSequence(seq_id, typ_id) => {
-                let typ_key = self.map.types.key_for_id(typ_id).unwrap();
-                let seq = Sequence::new(typ_key, Vec::new());
-                let seq_key = self.local.storage.insert_sequence(seq);
+        // from here on things can fail, in which case there is no next tag
 
-                self.map.sequences.insert(seq_key, seq_id);
-                self.weaves.insert(seq_id, Weave::new());
-            }
-            DocumentOp::CreateWord(word_id, text) => {
-                let word_key = self.local.storage.insert_word(&text);
-                self.map.words.insert(word_key, word_id);
-            }
+        // no parent -> we are at the root (or in an unlinked node…)
+        let parent_tag = self.parents.get(&tag.seq())?;
+        let parent_seq = parent_tag.seq();
+        let parent = self.storage.get_weave(parent_seq);
+        let parent_item_id = parent_tag.item().unwrap();
+        match parent.get_next(parent_item_id) {
+            Some((_, Item::Sequence(child))) => return Some(Tag::Start(child)),
+            Some((id, _)) => return Some(Tag::Item(parent_seq, id)),
+            None => return Some(Tag::Start(parent_seq))
         }
     }
-
-    fn log_weave(&self, id: SequenceId) {
-        let weave = self.weaves.get(&id).unwrap();
-        let item = |item: GlobalItem| {
-            match self.map.to_local(item) {
-                Item::Word(key) => self.local.storage.get_word(key).text.as_str(),
-                Item::Symbol(key) => self.local.storage.get_symbol(key).text.as_str(),
-                Item::Sequence(_) => "<seq>",
-                Item::Object(_) => "<obj>",
-            }
-        };
-
-        for atom in weave.atoms.iter() {
-            match atom.op {
-                AtomOp::Remove => info!("{} Remove {}", atom.id, atom.prev),
-                AtomOp::Replace(id) => info!("{} Replace({}) {}", atom.id, item(id), atom.prev),
-                AtomOp::Add(id) => info!("{} Add({}) {}", atom.id, item(id), atom.prev),
-            }
-        }
-    }
-
-    pub fn replace(&mut self, tag: Tag, new_item: Item) {
-        let (seq_key, idx) = tag.seq_and_idx().unwrap();
-        self.local.unlink(tag);
-        let seq = self.local.storage.get_sequence_mut(seq_key);
-
-        let seq_id = self.map.sequences.id_for_key(seq_key).unwrap();
-        let weave = self.weaves.get_mut(&seq_id).unwrap();
-        let prev_id = weave.find(idx).unwrap();
-        let atom = weave.create(self.site, prev_id, AtomOp::Replace(self.map.to_global(new_item)));
-        weave.add(atom);
-        let map = &self.map;
-        seq.items.clear();
-        seq.items.extend(
-            weave.render().map(|item| map.to_local(item))
-        );
-        info!("replace -> {:?}", seq.items);
-        self.log_weave(seq_id);
-        self.pending.push(DocumentOp::SeqOp(seq_id, atom));
-
-        self.local.link(tag);
-    }
-
-    // returns the tag where, if the item was inserted again, the original state would be restored
-    pub fn remove(&mut self, tag: Tag) -> (Tag, Item) {
-        let (seq_key, idx) = tag.seq_and_idx().unwrap();
-        self.local.unlink(tag);
-        let seq = self.local.storage.get_sequence_mut(seq_key);
-        let item = seq.items[idx];
-
-        let seq_id = self.map.sequences.id_for_key(seq_key).unwrap();
-        let weave = self.weaves.get_mut(&seq_id).unwrap();
-        let prev_id = weave.find(idx).unwrap();
-        let atom = weave.create(self.site, prev_id, AtomOp::Remove);
-        let map = &self.map;
-        weave.add(atom);
-        seq.items.clear();
-        seq.items.extend(
-            weave.render().map(|item| map.to_local(item))
-        );
-
-        let new_pos = if idx >= seq.items.len() {
-            SequencePos::End
-        } else {
-            SequencePos::At(idx)
-        };
-
-        info!("remove -> {:?}", seq.items);
-        self.log_weave(seq_id);
-        self.pending.push(DocumentOp::SeqOp(seq_id, atom));
-        (Tag { seq: seq_key, pos: new_pos }, item)
-    }
-
-    pub fn insert(&mut self, tag: Tag, new_item: Item) {
-        let seq_key = tag.seq;
-        let seq = self.local.storage.get_sequence_mut(seq_key);
-        let idx = match tag.pos {
-            SequencePos::At(idx) => idx,
-            SequencePos::End => seq.items.len()
-        };
-
-        info!("insert {:?} at {}: {:?}", new_item, idx, seq.items);
-        let seq_id = self.map.sequences.id_for_key(seq_key).unwrap();
-        let weave = self.weaves.get_mut(&seq_id).unwrap();
-        let prev_id = weave.find(idx).unwrap_or(Id::null());
-        info!("prev id {}", prev_id);
-        let atom = weave.create(self.site, prev_id, AtomOp::Add(self.map.to_global(new_item)));
-        let map = &self.map;
-        weave.add(atom);
-        seq.items.clear();
-        seq.items.extend(
-            weave.render().map(|item| map.to_local(item))
-        );
-        info!("insert -> {:?}", seq.items);
-        self.log_weave(seq_id);
-        self.pending.push(DocumentOp::SeqOp(seq_id, atom));
-
-        self.local.link(tag);
-    }
-
-    pub fn add_word(&mut self, text: &str) -> Item {
-        let key = self.local.storage.insert_word(text);
-        if !self.map.words.forward.contains_key(&key) {
-            let id = self.map.words.add_local(self.site, key);
-            self.pending.push(DocumentOp::CreateWord(id, text.to_owned()));
-        }
-        Item::Word(key)
-    }
-
-    pub fn crate_seq(&mut self, typ: TypeKey) -> Item {
-        let key = self.local.storage.insert_sequence(Sequence::new(typ, vec![]));
-        let id = self.map.sequences.add_local(self.site, key);
-        let typ = self.map.types.id_for_key(typ).unwrap();
-        self.pending.push(DocumentOp::CreateSequence(id, typ));
-        Item::Sequence(key)
+    pub fn get_parent_tag(&self, tag: Tag) -> Option<Tag> {
+        self.parents.get(&tag.seq()).cloned()
     }
 }

@@ -13,7 +13,7 @@ fn main() {
     };
 
     let data = app.export_docx();
-    std::fs::write("document.docx", data);
+    std::fs::write("document.docx", data).unwrap();
 
     pathfinder_view::show(app, pathfinder_view::Config {
         zoom: true,

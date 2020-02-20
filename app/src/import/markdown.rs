@@ -1,16 +1,16 @@
-use pulldown_cmark::{Parser, Event, Tag};
+use pulldown_cmark::{Parser, Event, Tag, CodeBlockKind};
 use grafeia_core::*;
 use std::mem::replace;
 
-pub fn markdown_design(storage: &mut Storage) -> Design {
-    let coramont_regular = storage.insert_font_face(
-        FontFace::from_data(include_bytes!("../../../data/Cormorant-Regular.ttf")[..].into())
+pub fn markdown_design(document: &mut Document) -> Design {
+    let coramont_regular = document.add_font(
+        &include_bytes!("../../../data/Cormorant-Regular.ttf")[..]
     );
-    let coramont_italic = storage.insert_font_face(
-        FontFace::from_data(include_bytes!("../../../data/Cormorant-Regular.ttf")[..].into())
+    let coramont_italic = document.add_font(
+        &include_bytes!("../../../data/Cormorant-Regular.ttf")[..]
     );
-    let didot = storage.insert_font_face(
-        FontFace::from_data(include_bytes!("../../../data/GFSDidot.otf")[..].into())
+    let didot = document.add_font(
+        &include_bytes!("../../../data/GFSDidot.otf")[..]
     );
     
     let default = TypeDesign {
@@ -31,7 +31,7 @@ pub fn markdown_design(storage: &mut Storage) -> Design {
     for (i, &size) in [15.0, 12.0, 10.0, 8.0, 6.0, 5.0f32].iter().enumerate() {
         let name = &format!("header_{}", i + 1);
         design.set_type(
-            storage.find_type(name).unwrap(),
+            document.find_type(name).unwrap(),
             TypeDesign {
                 display:        Display::Block,
                 font:           Font {
@@ -49,7 +49,7 @@ pub fn markdown_design(storage: &mut Storage) -> Design {
         );
     }
     design.set_type(
-        storage.find_type("paragraph").unwrap(),
+        document.find_type("paragraph").unwrap(),
         TypeDesign {
             display:        Display::Paragraph(Length::mm(10.0)),
             font:           Font {
@@ -66,7 +66,7 @@ pub fn markdown_design(storage: &mut Storage) -> Design {
         }
     );
     design.set_type(
-        storage.find_type("list").unwrap(),
+        document.find_type("list").unwrap(),
         TypeDesign {
             display:        Display::Block,
             font:           Font {
@@ -83,7 +83,7 @@ pub fn markdown_design(storage: &mut Storage) -> Design {
         }
     );
     design.set_type(
-        storage.find_type("emphasis").unwrap(),
+        document.find_type("emphasis").unwrap(),
         TypeDesign {
             display:        Display::Inline,
             font:           Font {
@@ -102,12 +102,12 @@ pub fn markdown_design(storage: &mut Storage) -> Design {
     design
 }
 
-pub fn define_types(storage: &mut Storage) {
+pub fn define_types(document: &mut Document) {
     for level in 1 ..= 6 {
-        storage.insert_type(&format!("header_{}", level), Type::new(format!("Markdown Heading #{}", level)));
+        document.create_type(&format!("header_{}", level), Type::new(format!("Markdown Heading #{}", level)));
     }
-    let mut add_type = |name: &'static str, description: &'static str| -> TypeKey {
-        storage.insert_type(name, Type::new(format!("Markdown {}", description)))
+    let mut add_type = |name: &str, description: &'static str| -> TypeId {
+        document.create_type(name, Type::new(format!("Markdown {}", description)))
     };
 
     add_type("document", "Document");
@@ -119,26 +119,26 @@ pub fn define_types(storage: &mut Storage) {
     add_type("list", "Unnumbered list of items");
 }
 
-fn text_items<'a>(storage: &'a mut Storage, text: &'a str) -> impl Iterator<Item=Item> + 'a {
+fn text_items<'a>(document: &'a mut Document, text: &'a str) -> impl Iterator<Item=Item> + 'a {
     text.split(char::is_whitespace).filter(|&s| s.len() > 0)
-        .map(move |s| Item::Word(storage.insert_word(s)))
+        .map(move |s| Item::Word(document.create_word(s)))
 }
 
-pub fn import_markdown(mut storage: Storage, text: &str) -> LocalDocument {
-    let document = storage.find_type("document").unwrap();
-    let paragraph = storage.find_type("paragraph").unwrap();
-    let emphasis = storage.find_type("emphasis").unwrap();
-    let block_quote = storage.find_type("blockquote").unwrap();
-    let inline_code = storage.find_type("inline-code").unwrap();
-    let list = storage.find_type("list").unwrap();
-    let block_code = storage.find_type("block-code").unwrap();
-    let headings: Vec<TypeKey> = (1 ..= 6)
-        .map(|level| storage.find_type(&format!("header_{}", level)).unwrap())
+pub fn import_markdown(document: &mut Document, text: &str) -> SequenceId {
+    let document_typ = document.find_type("document").unwrap();
+    let paragraph = document.find_type("paragraph").unwrap();
+    let emphasis = document.find_type("emphasis").unwrap();
+    let block_quote = document.find_type("blockquote").unwrap();
+    let inline_code = document.find_type("inline-code").unwrap();
+    let list = document.find_type("list").unwrap();
+    let _block_code = document.find_type("block-code").unwrap();
+    let headings: Vec<TypeId> = (1 ..= 6)
+        .map(|level| document.find_type(&format!("header_{}", level)).unwrap())
         .collect();
 
     let mut stack = vec![];
     let mut items = vec![];
-    let mut current_key = document;
+    let mut current_key = document_typ;
 
     let mut events = Parser::new(text).into_iter();
     while let Some(event) = events.next() {
@@ -152,24 +152,27 @@ pub fn import_markdown(mut storage: Storage, text: &str) -> LocalDocument {
                     Tag::Emphasis => emphasis,
                     Tag::List(None) => list,
                     Tag::Item => {
-                        items.extend(text_items(&mut storage, "·"));
+                        items.extend(text_items(document, "·"));
                         paragraph
                     }
                     Tag::CodeBlock(lang) => {
                         let mut code = String::new();
                         while let Some(event) = events.next() {
                             match event {
-                                Event::End(tag) => break,
+                                Event::End(_) => break,
                                 Event::Text(text) | Event::Code(text) => code.push_str(&text),
                                 _ => unreachable!()
                             }
                         }
-                        match lang.as_ref() {
-                            "tex" | "TeX" | "latex" | "LaTeX" => {
-                                let key = storage.insert_object(Object::TeX(TeX::display(code)));
-                                items.push(Item::Object(key));
+                        match lang {
+                            CodeBlockKind::Fenced(s) => match s.as_ref() {
+                                "tex" | "TeX" | "latex" | "LaTeX" => {
+                                    let key = document.create_object(Object::TeX(TeX::display(code)));
+                                    items.push(Item::Object(key));
+                                },
+                                _ => {}
                             }
-                            _ => {}
+                            CodeBlockKind::Indented => {}
                         }
                         continue;
                     }
@@ -181,23 +184,21 @@ pub fn import_markdown(mut storage: Storage, text: &str) -> LocalDocument {
             Event::End(_) => {
                 let (parent_key, parent_items) = stack.pop().unwrap();
                 let inner_items = replace(&mut items, parent_items);
-                let seq = Sequence::new(current_key, inner_items);
-                let key = storage.insert_sequence(seq);
-                items.push(Item::Sequence(key));
+                let id = document.creat_seq_with_items(current_key, inner_items);
+                items.push(Item::Sequence(id));
                 current_key = parent_key;
             }
             Event::Text(text) => {
-                items.extend(text_items(&mut storage, text.as_ref()));
+                items.extend(text_items(document, text.as_ref()));
             }
             Event::Code(text) => {
-                let seq = Sequence::new(inline_code, text_items(&mut storage, text.as_ref()).collect());
-                let key = storage.insert_sequence(seq);
-                items.push(Item::Sequence(key));
+                let text_items: Vec<_> = text_items(document, text.as_ref()).collect();
+                let id = document.creat_seq_with_items(inline_code, text_items);
+                items.push(Item::Sequence(id));
             }
             _ => {}
         }
     }
 
-    let key = storage.insert_sequence(Sequence::new(document, items));
-    LocalDocument::new(storage, key)
+    document.creat_seq_with_items(document_typ, items)
 }

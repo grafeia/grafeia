@@ -5,7 +5,8 @@ use pathfinder_geometry::{
     rect::RectF,
     transform2d::Transform2F
 };
-use pathfinder_renderer::scene::{Scene, PathObject};
+use pathfinder_renderer::scene::{Scene, DrawPath};
+use pathfinder_content::fill::FillRule as PaFillRule;
 use crate::*;
 use crate::draw::DrawCtx;
 use std::fmt;
@@ -116,7 +117,7 @@ impl SvgObject {
         FlexMeasure::fixed_box(w, h)
     }
 
-    fn draw(&self, ctx: &DrawCtx, origin: Vector2F, size: Vector2F, scene: &mut Scene) {
+    fn draw(&self, _ctx: &DrawCtx, origin: Vector2F, size: Vector2F, scene: &mut Scene) {
         // coorinates are at the lower left, but objects expect the origin at the top left
         let view_box = self.scene.view_box();
         let svg_size = view_box.size();
@@ -127,17 +128,16 @@ impl SvgObject {
         
         for (paint, outline, _) in self.scene.paths() {
             let outline = outline.clone();
-            let new_path = PathObject::new(outline.transform(tr), scene.push_paint(paint), String::new());
+            let new_path = DrawPath::new(outline.transform(tr), scene.push_paint(paint), None, PaFillRule::Winding, String::new());
             scene.push_path(new_path);
         }
     }
 }
 
 pub use rex::layout::Style as TeXStyle;
-use rex::{Renderer, RenderSettings, Cursor, parser::color::RGBA, fp::F24P8, layout::{Layout, Alignment}, constants::UNITS_PER_EM};
+use rex::{Renderer, RenderSettings, Cursor, parser::color::RGBA, fp::F24P8, layout::Layout, constants::UNITS_PER_EM};
 use font::{OpenTypeFont, Font};
-use vector::{Surface, PathBuilder, PathStyle, Outline};
-use std::convert::TryFrom;
+use vector::{Surface, PathBuilder, PathStyle, Outline, FillRule};
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct TeX {
@@ -164,7 +164,7 @@ impl TeX {
     }
     fn build(&self, ctx: &DrawCtx) -> (Layout, RenderSettings) {
         let mut parse = rex::parser::parse(&self.tex).expect("invalid tex");
-        let mut settings = RenderSettings::default()
+        let settings = RenderSettings::default()
             .font_size(ctx.type_design.font.size.value as f64)
             .horz_padding(0.into())
             .style(self.style);
@@ -202,8 +202,16 @@ impl TeX {
         
         let renderer = TexRenderer {
             settings: &settings,
-            style: scene.build_style(PathStyle { fill: Some((0, 0, 0, 200)), stroke: None }),
-            bbox_style: scene.build_style(PathStyle { fill: None, stroke: Some(((200, 0, 200, 200), 10.0)) }),
+            style: scene.build_style(PathStyle {
+                fill: Some((0, 0, 0, 200)),
+                stroke: None, fill_rule:
+                FillRule::NonZero
+            }),
+            bbox_style: scene.build_style(PathStyle {
+                fill: Some((200, 0, 0, 200)),
+                stroke: None, fill_rule:
+                FillRule::NonZero
+            }),
             transform,
             font: &*XITS
         };
@@ -237,7 +245,7 @@ impl<'a, S: Surface> Renderer for TexRenderer<'a, S> {
         out.draw_path(glyph.path.transform(tr), &self.style);
     }
 
-    fn bbox(&self, out: &mut Self::Out, pos: Cursor, width: F24P8, height: F24P8, color: &str) {
+    fn bbox(&self, out: &mut Self::Out, pos: Cursor, width: F24P8, height: F24P8, _color: &str) {
         let rect = rect2rect(pos, width, height);
 
         let mut pb: PathBuilder<S::Outline> = PathBuilder::new();
@@ -260,7 +268,7 @@ impl<'a, S: Surface> Renderer for TexRenderer<'a, S> {
         where F: FnMut(&Self, &mut Self::Out)
     {
         let RGBA(r, g, b, a) = color;
-        let style = out.build_style(PathStyle { fill: Some((r, g, b, a)), stroke: None });
+        let style = out.build_style(PathStyle { fill: Some((r, g, b, a)), stroke: None, fill_rule: FillRule::NonZero });
 
         contents(&TexRenderer {
             style,

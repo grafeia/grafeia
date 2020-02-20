@@ -15,11 +15,9 @@ pub mod draw;
 pub mod net;
 mod gen;
 mod text;
-mod storage;
 mod object;
 mod document;
 
-pub use storage::*;
 pub use content::*;
 pub use layout::FlexMeasure;
 pub use units::*;

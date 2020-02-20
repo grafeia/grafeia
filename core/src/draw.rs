@@ -1,23 +1,17 @@
 use crate::*;
-use crate::layout::{Writer, Glue, Style, ColumnLayout, FlexMeasure};
+use crate::layout::{Writer, Glue, ColumnLayout, FlexMeasure};
 use crate::units::Length;
 use crate::text::{grapheme_indices, build_gids};
-use std::collections::hash_map::{HashMap, Entry};
+use std::collections::hash_map::{HashMap};
 use font;
-use vector::{Vector, PathStyle, Surface, PathBuilder};
+use vector::{PathStyle, Surface, PathBuilder, FillRule};
 use pathfinder_geometry::{
     vector::Vector2F,
     rect::RectF,
     transform2d::Transform2F
 };
-use pathfinder_content::{
-    outline::{Contour, Outline}
-};
-use pathfinder_color::ColorU;
-use pathfinder_renderer::{
-    scene::{Scene, PathObject},
-    paint::{Paint, PaintId}
-};
+use pathfinder_content::outline::Outline;
+use pathfinder_renderer::scene::Scene;
 
 #[derive(Clone)]
 struct Context<'a> {
@@ -34,10 +28,16 @@ struct Layout {
     glyphs: Vec<(font::GlyphId, Transform2F)>,
 }
 
+#[derive(Hash, PartialEq, Eq)]
+pub enum Marker {
+    Start(SequenceId),
+    End(SequenceId),
+}
+
 pub struct Page {
     scene: Scene,
     tags: Vec<(f32, Vec<(f32, Tag)>)>,
-    positions: HashMap<Tag, RectF>
+    positions: HashMap<Tag, RectF>,
 }
 impl Page {
     pub fn scene(&self) -> &Scene {
@@ -57,13 +57,15 @@ impl Page {
         None
     }
     pub fn position(&self, tag: Tag) -> Option<RectF> {
-        self.positions.get(&tag).cloned()
+        let r = self.positions.get(&tag).cloned();
+        debug!("{:?} at {:?}", tag, r);
+        r
     }
 }
 
 
 pub struct Cache {
-    layout_cache: HashMap<(Font, WordKey), Layout>
+    layout_cache: HashMap<(Font, WordId), Layout>
 }
 impl Default for Cache {
     fn default() -> Self {
@@ -72,8 +74,8 @@ impl Default for Cache {
 }
 pub struct DrawCtx<'a> {
     pub storage: &'a Storage,
-    pub target: &'a Target,
     pub design: &'a Design,
+    pub target: &'a Target,
     pub type_design: &'a TypeDesign
 }
 impl Cache {
@@ -83,8 +85,8 @@ impl Cache {
         }
     }
 
-    fn render_item(&mut self, writer: &mut Writer, ctx: &DrawCtx, tag: Tag, item: &Item) {
-        match *item {
+    fn render_item(&mut self, writer: &mut Writer, ctx: &DrawCtx, tag: Tag, item: Item) {
+        match item {
             Item::Word(key) => {
                 let font = ctx.type_design.font;
                 let space = Glue::space(ctx.type_design.word_space);
@@ -102,40 +104,40 @@ impl Cache {
             _ => {}
         }
     }
-    fn render_sequence(&mut self, writer: &mut Writer, ctx: &DrawCtx, key: SequenceKey) {
-        let seq = ctx.storage.get_sequence(key);
-        match ctx.type_design.display {
+    fn render_sequence(&mut self, writer: &mut Writer, ctx: &DrawCtx, seq_id: SequenceId) {
+        let weave = ctx.storage.get_weave(seq_id);
+        let type_design = ctx.design.get_type_or_default(weave.typ());
+        match type_design.display {
             Display::Block => writer.promote(Glue::newline()),
             Display::Paragraph(indent) => writer.space(Glue::newline(), Glue::hfill(), FlexMeasure::fixed(indent), false),
             _ => {}
         }
         let ctx = DrawCtx {
-            type_design: ctx.design.get_type_or_default(seq.typ()),
+            type_design,
             .. *ctx
         };
-        if seq.items.len() > 0 {
-            for (i, item) in seq.items.iter().enumerate() {
-                self.render_item(writer, &ctx, Tag::at(key, i), item);
-            }
-        } else {
-            writer.empty(Glue::any(), Glue::any(), Tag::end(key));
+
+        writer.empty(Glue::any(), Glue::None, Tag::Start(seq_id));
+        for (item_id, item) in weave.items() {
+            self.render_item(writer, &ctx, Tag::Item(seq_id, item_id), item);
         }
+        writer.empty(Glue::None, Glue::any(), Tag::End(seq_id));
+
         match ctx.type_design.display {
             Display::Block | Display::Paragraph(_) => writer.promote(Glue::hfill()),
             _ => {}
         }
     }
 
-    pub fn render(&mut self, target: &Target, document: &LocalDocument, design: &Design) -> Vec<Page> {
+    pub fn render(&mut self, storage: &Storage, design: &Design, target: &Target, root: SequenceId) -> Vec<Page> {
         let mut writer = Writer::new();
-        let storage = &**document;
         let ctx = DrawCtx {
             storage,
-            target,
             design,
+            target,
             type_design: design.default()
         };
-        self.render_sequence(&mut writer, &ctx, document.root());
+        self.render_sequence(&mut writer, &ctx, root);
 
         let mut pages = Vec::new();
         let stream = writer.finish();
@@ -145,41 +147,39 @@ impl Cache {
             scene.set_bounds(target.media_box.into());
             scene.set_view_box(target.trim_box.into());
 
-            let style = scene.build_style(PathStyle {
+            let page_style = scene.build_style(PathStyle {
                 fill: Some((255,255,255,255)),
-                stroke: Some(((0,0,0,255), 0.25))
+                stroke: Some(((0,0,0,255), 0.25)),
+                fill_rule: FillRule::NonZero
+            });
+            let glyph_style = scene.build_style(PathStyle {
+                fill: Some((0,0,0,255)),
+                stroke: None,
+                fill_rule: FillRule::NonZero
             });
             let mut pb = PathBuilder::new();
             pb.rect(target.trim_box.into());
             
-            scene.draw_path(pb.into_outline(), &style);
+            scene.draw_path(pb.into_outline(), &page_style);
 
-            let paint = scene.push_paint(&Paint::Color(ColorU { r: 0, g: 0, b: 0, a: 200 }));
             use crate::layout::Item as LayoutItem;
 
             let mut line_indices = Vec::new();
             let mut positions = HashMap::new();
             let content_box: RectF = target.content_box.into();
             for (y, line) in column {
-                let line_height = line.height();
                 let mut line_items = Vec::new();
                 for (x, size, item, tag) in line {
                     let size: Vector2F = size.into();
                     let p = content_box.origin() + Vector2F::new(x.value as f32, y.value as f32);
                     match item {
                         LayoutItem::Word(key, font) => {
-                            let (mut outline, advance) = self.render_word(key, storage, font);
+                            let (mut outline, _advance) = self.render_word(key, storage, font);
                             outline.transform(&Transform2F::from_translation(p));
-                            scene.push_path(PathObject::new(outline, paint, String::new()));
+                            scene.draw_path(outline, &glyph_style);
                         }
                         LayoutItem::Object(key) => {
                             storage.get_object(key).draw(&ctx, p, size.into(), &mut scene);
-                        }
-                        LayoutItem::Empty => {
-                            let mut pb = PathBuilder::new();
-                            pb.move_to(p);
-                            pb.line_to(p - Vector2F::new(0.0, line_height.value));
-                            scene.draw_path(pb.into_outline(), &style);
                         }
                         _ => {}
                     };
@@ -196,17 +196,17 @@ impl Cache {
         pages
     }
 
-    pub fn get_position_on_page(&self, design: &Design, document: &LocalDocument, page: &Page, tag: Tag, byte_pos: usize) -> Option<Vector2F> {
-        match *document.get_item(tag)? {
+    pub fn get_position_on_page(&self, storage: &Storage, design: &Design, page: &Page, tag: Tag, byte_pos: usize) -> Option<Vector2F> {
+        match storage.get_item(tag)? {
             Item::Word(key) => {
                 let rect = page.position(tag)?;
                 if byte_pos == 0 {
                     return Some(rect.lower_left());
                 }
-                let seq = document.get_sequence(tag.seq);
+                let seq = storage.get_weave(tag.seq());
                 let type_design = design.get_type_or_default(seq.typ());
-                let word = document.get_word(key);
-                let face = document.get_font_face(type_design.font.font_face);
+                let word = storage.get_word(key);
+                let face = storage.get_font_face(type_design.font.font_face);
                 let grapheme_indices = grapheme_indices(face, &word.text);
                 let layout = self.layout_cache.get(&(type_design.font, key)).unwrap();
 
@@ -217,7 +217,7 @@ impl Cache {
                 };
 
                 let mut last = (0, Vector2F::default());
-                for (&n, &(gid, offset)) in grapheme_indices.iter().zip(layout.glyphs.iter()) {
+                for (&n, &(_gid, offset)) in grapheme_indices.iter().zip(layout.glyphs.iter()) {
                     if n >= byte_pos {
                         return Some(rect.lower_left() + interpolate(last, (n, offset.vector,), byte_pos));
                     }
@@ -227,40 +227,40 @@ impl Cache {
                 Some(rect.lower_left() + interpolate(last, (word.text.len(), layout.advance), byte_pos))
             }
             Item::Sequence(key) => {
-                let first = document.get_first(key);
-                let rect = page.position(first)?;
-                return Some(rect.lower_left());
+                storage.get_first(key)
+                    .and_then(|(first, _)| page.position(first))
+                    .map(|rect| rect.lower_left())
             }
             _ => None
         }
     }
-    pub fn find(&self, design: &Design, document: &LocalDocument, offset: f32, tag: Tag) -> Option<(Vector2F, usize, TypeKey)> {
-        if let &Item::Word(key) = document.get_item(tag)? {
-            let seq = document.get_sequence(tag.seq);
+    pub fn find(&self, storage: &Storage, design: &Design, offset: f32, tag: Tag) -> Option<(Vector2F, usize)> {
+        if let Some(Item::Word(key)) = storage.get_item(tag) {
+            let seq = storage.get_weave(tag.seq());
             let type_design = design.get_type_or_default(seq.typ());
-            let word = document.get_word(key);
-            let face = document.get_font_face(type_design.font.font_face);
+            let word = storage.get_word(key);
+            let face = storage.get_font_face(type_design.font.font_face);
             let grapheme_indices = grapheme_indices(face, &word.text);
             let layout = self.layout_cache.get(&(type_design.font, key)).unwrap();
 
             if offset >= layout.advance.x() {
-                return Some((layout.advance, word.text.len(), seq.typ()));
+                return Some((layout.advance, word.text.len()));
             }
-            for (&n, (gid, tr)) in grapheme_indices.iter().rev().zip(layout.glyphs.iter().rev()) {
+            for (&n, (_gid, tr)) in grapheme_indices.iter().rev().zip(layout.glyphs.iter().rev()) {
                 if tr.vector.x() < offset {
                     println!("{}|{}", &word.text[0..n], &word.text[n..]);
-                    return Some((tr.vector, n, seq.typ()));
+                    return Some((tr.vector, n));
                 }
             }
         }
         None
     }
-    fn word_layout(&mut self, word: WordKey, storage: &Storage, font: Font) -> &Layout {
+    fn word_layout(&mut self, word: WordId, storage: &Storage, font: Font) -> &Layout {
         self.layout_cache.entry((font, word))
             .or_insert_with(|| Cache::build_word_layout(word, storage, font))
     }
 
-    fn build_word_layout(word: WordKey, storage: &Storage, font: Font) -> Layout {
+    fn build_word_layout(word: WordId, storage: &Storage, font: Font) -> Layout {
         let word = storage.get_word(word);
         let face = storage.get_font_face(font.font_face);
         let mut last_gid = None;
@@ -289,7 +289,7 @@ impl Cache {
         }
     }
 
-    fn render_word(&mut self, word: WordKey, storage: &Storage, font: Font) -> (Outline, Vector2F) {
+    fn render_word(&mut self, word: WordId, storage: &Storage, font: Font) -> (Outline, Vector2F) {
         let layout = self.word_layout(word, storage, font);
         let font = storage.get_font_face(font.font_face);
 
