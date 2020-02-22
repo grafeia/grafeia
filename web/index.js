@@ -7,7 +7,9 @@ function ws_log(msg) {
     }
 };
 function ws_send(data) {
-    ws.send(data);
+    if (ws) {
+        ws.send(data);
+    }
 }
 function set_scroll_factors(factors) {
     // pixel delta factor x and y
@@ -70,6 +72,7 @@ function log_err(msg) {
 var ws_log = function(msg) {
     console.log(msg);
 }
+
 async function init() {
     if (window.location.host !== "grafeia.github.io") {
         try {
@@ -84,8 +87,11 @@ async function init() {
     });
     log_err("wasm loaded");
     try {
-        let app = new wasm_bindgen.Grafeia();
-        app.show();
+        if (ws) {
+            wasm_bindgen.online();
+        } else {
+            wasm_bindgen.offline();
+        }
     } catch (e) {
         log_err(e);
     }

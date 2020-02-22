@@ -1,8 +1,9 @@
-use super::{Entry, StreamVec, FlexMeasure, Item};
+use super::{Entry, StreamVec, FlexMeasure, ItemMeasure};
 //use layout::style::{Style};
 use crate::units::{Length, Size};
 use std::fmt::{self, Debug};
 use crate::content::{Font, Tag};
+use crate::draw::RenderItem;
 
 #[derive(Copy, Clone, Debug, Default)]
 struct LineBreak {
@@ -32,23 +33,23 @@ pub struct ParagraphStyle {
     pub par_indent: f32
 }
 
-pub struct ParagraphLayout<'a> {
-    items:      &'a [Entry],
+pub struct ParagraphLayout {
+    items:      Vec<Entry>,
     nodes:      Vec<Option<LineBreak>>,
     width:      Length,
     last:       usize
 }
-pub struct ColumnLayout<'a> {
-    para:       ParagraphLayout<'a>,
+pub struct ColumnLayout {
+    para:       ParagraphLayout,
     nodes_col:  Vec<Option<ColumnBreak>>,
     height:     Length
 }
-impl<'a> Debug for ColumnLayout<'a> {
+impl Debug for ColumnLayout {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "ColumnLayout")
     }
 }
-impl<'a> Debug for ParagraphLayout<'a> {
+impl Debug for ParagraphLayout {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "ParagraphLayout")
     }
@@ -61,7 +62,7 @@ struct Context {
     pos:        usize,  // calculation starts here
     score:      f32,    // score at pos
     branches:   u8,     // number of branches so far (<= 64)
-    punctuaton: FlexMeasure
+    overflow:   FlexMeasure, // how much to overflow into the margin
 }
 impl Context {
     fn new(start: usize, score: f32) -> Context {
@@ -72,35 +73,35 @@ impl Context {
             pos:        start,
             branches:   0,
             score:      score,
-            punctuaton: FlexMeasure::zero()
+            overflow:   FlexMeasure::zero(),
         }
     }
-    fn add_word(&mut self, measure: FlexMeasure) {
-        self.measure += self.punctuaton + measure;
-        self.punctuaton = FlexMeasure::zero();
-    }
-    fn add_punctuation(&mut self, measure: FlexMeasure) {
-        self.punctuaton = measure;
+    fn add_item(&mut self, measure: ItemMeasure, is_first: bool) {
+        if !is_first {
+            self.measure += measure.left;
+        }
+        self.measure += self.overflow + measure.content;
+        self.overflow = measure.right;
     }
     fn line(&self) -> FlexMeasure {
-        self.measure + self.punctuaton * 0.5
+        self.measure
     }
     fn fill(&mut self, width: Length) {
         self.measure = self.line();
         self.measure.extend(width);
-        self.punctuaton = FlexMeasure::zero();
+        self.overflow = FlexMeasure::zero();
     }
 }
 
-impl<'a> ParagraphLayout<'a> {
-    pub fn new(items: &'a StreamVec, width: Length) -> ParagraphLayout<'a> {
+impl ParagraphLayout {
+    pub fn new(items: StreamVec, width: Length) -> ParagraphLayout {
         let limit = items.0.len();
         let mut nodes = vec![None; limit+1];
         nodes[0] = Some(LineBreak::default());
 
         let mut layout = ParagraphLayout {
             nodes,
-            items: &items.0,
+            items: items.0,
             width,
             last: 0
         };
@@ -138,11 +139,10 @@ impl<'a> ParagraphLayout<'a> {
         
         while c.pos < self.items.len() {
             let n = c.pos;
+            let is_first = start == n;
             match self.items[n] {
-                Entry::Word(_, m, _, _) => c.add_word(m),
-                Entry::Object(_, m, _) => c.add_word(m),
-                Entry::Punctuation(_, m, _, _) => c.add_punctuation(m),
-                Entry::Space(breaking, s) => {
+                Entry::Item(m, _, _) => c.add_item(m, is_first),
+                Entry::Space(s, breaking) => {
                     if breaking {
                         // breaking case:
                         // width is not added yet!
@@ -184,7 +184,6 @@ impl<'a> ParagraphLayout<'a> {
                 Entry::BranchExit(skip) => {
                     c.pos += skip;
                 }
-                _ => {}
             }
             
             if c.measure.shrink > self.width {
@@ -216,12 +215,12 @@ impl<'a> ParagraphLayout<'a> {
             _ => break_point
         });
     }
-    pub fn lines<'l>(&'l self) -> Column<'l, 'a> {
+    pub fn lines(&self) -> Column {
         Column::new(0, self.last, self)
     }
 }
-impl<'a> ColumnLayout<'a>  {
-    pub fn new(items: &'a StreamVec, width: Length, height: Length) -> ColumnLayout<'a> {
+impl ColumnLayout {
+    pub fn new(items: StreamVec, width: Length, height: Length) -> ColumnLayout {
         let limit = items.0.len();
         let mut nodes = vec![None; limit+1];
         let mut nodes_col = vec![None; limit+1];
@@ -231,7 +230,7 @@ impl<'a> ColumnLayout<'a>  {
         let mut layout = ColumnLayout {
             para: ParagraphLayout {
                 nodes,
-                items: &items.0,
+                items: items.0,
                 width,
                 last: 0
             },
@@ -241,7 +240,7 @@ impl<'a> ColumnLayout<'a>  {
         layout.run();
         layout
     }
-    pub fn columns<'l>(&'l self) -> Columns<'l, 'a> {
+    pub fn columns(self) -> Columns {
         Columns::new(self)
     }
     fn run(&mut self) {
@@ -354,12 +353,12 @@ impl<'a> ColumnLayout<'a>  {
 }
 
 #[derive(Debug)]
-pub struct Columns<'l, 'a: 'l> {
-    layout:     &'l ColumnLayout<'a>,
+pub struct Columns {
+    layout:     ColumnLayout,
     columns:    Vec<usize>
 }
-impl<'l, 'a: 'l> Columns<'l, 'a> {
-    fn new(layout: &'l ColumnLayout<'a>) -> Self {
+impl Columns {
+    fn new(layout: ColumnLayout) -> Self {
         let mut columns = Vec::new();
         let mut last = layout.para.last;
         while last > 0 {
@@ -371,27 +370,36 @@ impl<'l, 'a: 'l> Columns<'l, 'a> {
             columns: columns
         }
     }
-}
-impl<'l, 'a: 'l> Iterator for Columns<'l, 'a> {
-    type Item = Column<'l, 'a>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.columns.pop().map(|last| Column::new(
+    pub fn get_column(&self, n: usize) -> Column {
+        let len = self.columns.len();
+        assert!(n < len);
+        let last = self.columns[len - 1 - n];
+        Column::new(
+            self.layout.nodes_col[last].unwrap().prev,
+            last,
+            &self.layout.para
+        )
+    }
+    pub fn columns(&self) -> impl Iterator<Item=Column> {
+        self.columns.iter().rev().map(move |&last| Column::new(
             self.layout.nodes_col[last].unwrap().prev,
             last,
             &self.layout.para
         ))
     }
+    pub fn len(&self) -> usize {
+        self.columns.len()
+    }
 }
 
 #[derive(Debug)]
-pub struct Column<'l, 'a: 'l> {
+pub struct Column<'a> {
     lines:      Vec<usize>, // points to the end of each line
-    layout:     &'l ParagraphLayout<'a>,
+    layout:     &'a ParagraphLayout,
     y:          Length
 }
-impl<'l, 'a: 'l> Column<'l, 'a> {
-    fn new(first: usize, mut last: usize, layout: &'l ParagraphLayout<'a>) -> Self {
+impl<'a> Column<'a> {
+    fn new(first: usize, mut last: usize, layout: &'a ParagraphLayout) -> Self {
         let mut lines = Vec::new();
         while last > first {
             lines.push(last);
@@ -405,8 +413,8 @@ impl<'l, 'a: 'l> Column<'l, 'a> {
         }
     }
 }
-impl<'l, 'a: 'l> Iterator for Column<'l, 'a> {
-    type Item = (Length, Line<'l, 'a>);
+impl<'a> Iterator for Column<'a> {
+    type Item = (Length, Line<'a>);
     
     fn next(&mut self) -> Option<Self::Item> {
         self.lines.pop().map(|last| {
@@ -419,60 +427,48 @@ impl<'l, 'a: 'l> Iterator for Column<'l, 'a> {
                 branches: 0,
                 measure:  FlexMeasure::zero(),
                 line:     b,
-                end:      last-1
+                end:      last-1,
             })
         })
     }
 }
 
 #[derive(Debug)]
-pub struct Line<'l, 'a: 'l> {
-    layout:     &'l ParagraphLayout<'a>,
+pub struct Line<'a> {
+    layout:     &'a ParagraphLayout,
     pos:        usize,
     end:        usize,
     branches:   usize,
     measure:    FlexMeasure,
-    line:       LineBreak
+    line:       LineBreak,
 }
-impl<'l, 'a: 'l> Line<'l, 'a> {
+impl<'a> Line<'a> {
     pub fn height(&self) -> Length {
         self.line.height
     }
 }
-impl<'l, 'a: 'l> Iterator for Line<'l, 'a> {
-    type Item = (Length, Size, Item, Tag);
+impl<'a> Iterator for Line<'a> {
+    type Item = (Length, Size, RenderItem, Tag);
     fn next(&mut self) -> Option<Self::Item> {
         while self.pos < self.end {
             let pos = self.pos;
             self.pos += 1;
+            let is_first = self.pos != self.line.prev;
 
             match self.layout.items[pos] {
-                Entry::Word(w, m, font, tag) => {
+                Entry::Item(m, item, tag) => {
+                    if !is_first {
+                        self.measure += m.left;
+                    }
                     let x = self.measure.at(self.line.factor);
-                    self.measure += m;
-                    let size = Size::new(m.at(self.line.factor), m.height);
-                    return Some((x, size, Item::Word(w, font), tag));
+                    self.measure += m.content + m.right;
+                    let total = m.left + m.content + m.right;
+                    let size = Size::new(total.at(self.line.factor), total.height);
+                    return Some((x, size, item, tag));
                 },
-                Entry::Punctuation(s, m, font, tag) => {
-                    let x = self.measure.at(self.line.factor);
-                    self.measure += m;
-                    let size = Size::new(m.at(self.line.factor), m.height);
-                    return Some((x, size, Item::Symbol(s, font), tag));
-                },
-                Entry::Space(_, s) => {
+                Entry::Space(s, _) => {
                     self.measure += s;
                 },
-                Entry::Object(key, m, tag) => {
-                    let x = self.measure.at(self.line.factor);
-                    self.measure += m;
-                    let size = Size::new(m.at(self.line.factor), m.height);
-                    return Some((x, size, Item::Object(key), tag));
-                }
-                Entry::Empty(tag) => {
-                    let x = self.measure.at(self.line.factor);
-                    let size = Size::zero();
-                    return Some((x, size, Item::Empty, tag));
-                }
                 Entry::BranchEntry(len) => {
                     if self.line.path & (1<<self.branches) == 0 {
                         // not taken

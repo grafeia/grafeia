@@ -1,6 +1,7 @@
 use grafeia_core::{
     *,
     draw::{Cache, Page},
+    layout::Columns
 };
 use pathfinder_renderer::scene::Scene;
 use pathfinder_geometry::{
@@ -53,8 +54,9 @@ pub struct App {
     design: Design,
 
     cache: Cache,
-    pages: Vec<Page>,
+    pages: Vec<Option<Page>>,
     cursor: Option<Cursor>,
+    columns: Option<Columns>,
 }
 impl App {
     pub fn build() -> Self {
@@ -67,17 +69,19 @@ impl App {
         let root = state.root;
 
         let document = Document::from_storage(storage, root, site);
-        let mut cache = Cache::new();
+        let cache = Cache::new();
 
-        let pages = cache.render(document.storage(), &design, &target, document.root());
-        App {
+        let mut app = App {
             cache,
             document,
             cursor: None,
-            pages,
+            pages: vec![],
+            columns: None,
             target,
             design
-        }
+        };
+        app.render();
+        app
     }
 
     #[cfg(feature="import_markdown")]
@@ -94,19 +98,16 @@ impl App {
         let root = markdown::import_markdown(&mut document, &text);
         document.set_root(root);
 
+        let storage = document.into_storage();
         let target = build::default_target();
 
-        let mut cache = Cache::new();
-        let pages = cache.render(&document, &design, &target, document.root());
-
-        App {
-            cache,
-            document,
-            cursor: None,
-            pages,
-            target,
-            design
-        }
+        let state = State {
+            storage: Cow::Owned(storage),
+            target: Cow::Owned(target),
+            design: Cow::Owned(design),
+            root
+        };
+        App::from_state(state, SiteId(1))
     }
 
     #[cfg(feature="export_docx")]
@@ -142,10 +143,29 @@ impl App {
     }
     fn clean(&mut self) {
     }
-    fn render(&mut self) { 
-        self.pages = self.cache.render(self.document.storage(), &self.design, &self.target, self.document.root());
+    fn render(&mut self) {
+        let columns = self.cache.layout(self.document.storage(), &self.design, &self.target, self.document.root());
+        let num_pages = columns.len();
+
+        self.pages = std::iter::from_fn(|| Some(None)).take(num_pages).collect();
+        self.columns = Some(columns);
+
+        self.render_page(0);
     }
-    fn get_position(&self, tag: Tag) -> Option<RectF> {
+    fn render_page(&mut self, page_nr: usize) {
+        let columns = self.columns.as_ref().unwrap();
+        if page_nr >= columns.len() {
+            return;
+        }
+
+        let column = columns.get_column(page_nr);
+        let page = self.cache.render_page(&self.document, &self.target, &self.design, column);
+        self.pages[page_nr] = Some(page);
+    }
+    fn page_position(&self, page_nr: usize, tag: Tag) -> Option<RectF> {
+        self.pages.get(page_nr)?.as_ref()?.positions.get(&tag).cloned()
+    }
+    fn get_position(&self, tag: Tag) -> Option<(usize, RectF)> {
         let tag = match tag {
             Tag::Item(_, _) => match self.document.get_item(tag)? {
                 Item::Sequence(id) => Tag::End(id),
@@ -153,16 +173,17 @@ impl App {
             }
             _ => tag
         };
-        let p = self.pages[0].position(tag);
+        let page_nr = 0;
+        let &p = self.pages.get(page_nr)?.as_ref()?.positions.get(&tag)?;
         debug!("{:?} at {:?}", tag, p);
-        p
+        Some((0, p))
     }
     fn set_cursor_to(&mut self, tag: Tag, pos: ItemPos) {
         debug!("set_cursor_to({:?}, {:?}", tag, pos);
         let weave = self.document.get_weave(tag.seq());
         match tag {
             Tag::Start(_) | Tag::End(_) => {
-                if let Some(rect) = self.get_position(tag) {
+                if let Some((_, rect)) = self.get_position(tag) {
                     self.cursor = Some(Cursor {
                         tag,
                         pos,
@@ -174,7 +195,7 @@ impl App {
                 let item = weave.get_item(id).unwrap();
                 match (pos, item) {
                     (ItemPos::After, _) => {
-                        if let Some(rect) = self.get_position(tag) {
+                        if let Some((_, rect)) = self.get_position(tag) {
                             let type_key = weave.typ();
                             let typ = self.design.get_type_or_default(type_key);
                             self.cursor = Some(Cursor {
@@ -187,7 +208,8 @@ impl App {
                         }
                     }
                     (ItemPos::Within(text_pos), Item::Word(_)) => {
-                        self.cursor = self.cache.get_position_on_page(self.document.storage(), &self.design, &self.pages[0], tag, text_pos)
+                        let page = self.pages.get(0).unwrap().as_ref().unwrap();
+                        self.cursor = self.cache.get_position_on_page(self.document.storage(), &self.design, page, tag, text_pos)
                         .map(|page_pos| Cursor {
                             tag,
                             pos,
@@ -256,8 +278,8 @@ impl App {
                                 let right_text = text[n ..].to_owned();
                                 let left_item = Item::Word(self.document.create_word(&left_text));
                                 let right_item = Item::Word(self.document.create_word(&right_text));
-                                let left_tag = self.document.replace(cursor.tag, right_item);
-                                self.document.insert(cursor.tag, left_item);
+                                let left_tag = self.document.replace(cursor.tag, left_item);
+                                self.document.insert(left_tag, right_item);
                                 Some((left_tag, ItemPos::After))
                             }
 
@@ -446,8 +468,11 @@ impl Interactive for App {
     fn title(&self) -> String {
         "γραφείο".into()
     }
-    fn scene(&mut self) -> Scene {
-        let mut scene = self.pages[0].scene().clone();
+    fn num_pages(&self) -> usize {
+        self.pages.len()
+    }
+    fn scene(&mut self, page_nr: usize) -> Scene {
+        let mut scene = self.pages[page_nr].as_ref().unwrap().scene().clone();
         if let Some(ref cursor) = self.cursor {
             let weave = self.document.get_weave(cursor.tag.seq());
             let type_design = self.design.get_type_or_default(weave.typ());
@@ -482,7 +507,7 @@ impl Interactive for App {
                 scene.draw_path(pb.into_outline(), &mark_style);
             };
             let mark_word = |scene: &mut Scene, tag: Tag| {
-                if let Some(rect) = self.pages[0].position(tag) {
+                if let Some(rect) = self.page_position(0, tag) {
                     let mut pb = PathBuilder::new();
                     pb.move_to(rect.lower_left());
                     pb.line_to(rect.lower_right());
@@ -492,10 +517,10 @@ impl Interactive for App {
             let word_space = type_design.word_space.width.value;
             match cursor.tag {
                 Tag::Start(seq) => {
-                    mark_seq(&mut scene, self.pages[0].position(Tag::End(seq)).unwrap().lower_left(), 0.5 * word_space);
+                    mark_seq(&mut scene, self.page_position(0, Tag::End(seq)).unwrap().lower_left(), 0.5 * word_space);
                 }
                 Tag::End(seq) => {
-                    mark_seq(&mut scene, self.pages[0].position(Tag::Start(seq)).unwrap().lower_right(), -0.5 * word_space);
+                    mark_seq(&mut scene, self.page_position(0, Tag::Start(seq)).unwrap().lower_right(), -0.5 * word_space);
                 }
                 _ => {}
             }
@@ -508,8 +533,8 @@ impl Interactive for App {
                     for child in self.document.childen(key) {
                         mark_word(&mut scene, child);
                     }
-                    mark_seq(&mut scene, self.pages[0].position(Tag::Start(key)).unwrap().lower_right(), -0.5 * word_space);
-                    mark_seq(&mut scene, self.pages[0].position(Tag::End(key)).unwrap().lower_left(), 0.5 * word_space);
+                    mark_seq(&mut scene, self.page_position(0, Tag::Start(key)).unwrap().lower_right(), -0.5 * word_space);
+                    mark_seq(&mut scene, self.page_position(0, Tag::End(key)).unwrap().lower_left(), 0.5 * word_space);
                 }
                 Some(Item::Object(_)) => {
                     let outline_style = scene.build_style(PathStyle {
@@ -518,7 +543,7 @@ impl Interactive for App {
                         fill_rule: FillRule::NonZero
                     });
         
-                    if let Some(rect) = dbg!(self.pages[0].position(cursor.tag)) {
+                    if let Some(rect) = dbg!(self.page_position(0, cursor.tag)) {
                         let mut pb = PathBuilder::new();
                         pb.rect(rect);
                         scene.draw_path(pb.into_outline(), &outline_style);
@@ -530,11 +555,11 @@ impl Interactive for App {
 
         scene
     }
-    fn mouse_input(&mut self, pos: Vector2F, state: ElementState) -> bool {
+    fn mouse_input(&mut self, page: usize, pos: Vector2F, state: ElementState) -> bool {
         let old_cursor = self.cursor.take();
 
         dbg!(pos, state);
-        if let Some((tag, word_pos)) = self.pages[0].find(pos) {
+        if let Some((tag, word_pos)) = self.pages[page].as_ref().unwrap().find(pos) {
             let offset = pos.x() - word_pos.x();
 
             if let Some((word_offset, n)) = self.cache.find(self.document.storage(), &self.design, offset, tag) {
@@ -678,9 +703,9 @@ impl Interactive for NetworkApp {
     fn title(&self) -> String {
         "γραφείο".into()
     }
-    fn scene(&mut self) -> Scene {
+    fn scene(&mut self, nr: usize) -> Scene {
         match self.state {
-            NetworkState::Connected(ref mut app) => app.scene(),
+            NetworkState::Connected(ref mut app) => app.scene(nr),
             _ => {
                 let mut scene = Scene::new();
                 let style = scene.build_style(PathStyle {
@@ -697,9 +722,15 @@ impl Interactive for NetworkApp {
             }
         }
     }
-    fn mouse_input(&mut self, pos: Vector2F, state: ElementState) -> bool {
+    fn num_pages(&self) -> usize {
         match self.state {
-            NetworkState::Connected(ref mut app) => app.mouse_input(pos, state),
+            NetworkState::Connected(ref app) => app.num_pages(),
+            _ => 1
+        }
+    }
+    fn mouse_input(&mut self, page: usize, pos: Vector2F, state: ElementState) -> bool {
+        match self.state {
+            NetworkState::Connected(ref mut app) => app.mouse_input(page, pos, state),
             _ => false
         }
     }

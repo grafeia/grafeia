@@ -1,5 +1,6 @@
 use std::fmt::Debug;
-use crate::{WordId, SymbolId, ObjectId, Font, Tag};
+use crate::{Tag};
+use crate::draw::RenderItem;
 
 // private mods
 mod glue;
@@ -35,27 +36,25 @@ pub struct Style {
     pub word_space: FlexMeasure,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct ItemMeasure {
+    pub content: FlexMeasure,
+    pub left:    FlexMeasure,
+    pub right:   FlexMeasure,
+}
+
 /// used as input to the line breaking algorithm
 #[derive(Debug)]
 #[allow(dead_code)]
 enum Entry {
-    /// A single word (sequence of glyphs)
-    Word(WordId, FlexMeasure, Font, Tag),
-    
-    /// Punctuation ('"', ',', '.', '-', …)
-    /// is positioned in the margin if at the beginning or end of the line
-    Punctuation(SymbolId, FlexMeasure, Font, Tag),
+    Item(ItemMeasure, RenderItem, Tag),
     
     /// Continue on the next line (fill)
     Linebreak(bool),
     
-    /// (breaking, measure)
-    Space(bool, FlexMeasure),
+    /// (measure, breaking)
+    Space(FlexMeasure, bool),
 
-    Empty(Tag),
-
-    Object(ObjectId, FlexMeasure, Tag),
-    
     /// Somtimes there are different possiblites of representing something.
     /// A Branch solves this by splitting the stream in two parts.
     /// The default path is taken by skipping the specified amount of entries.
@@ -75,13 +74,7 @@ enum Entry {
     BranchExit(usize),
 }
 
-/// result of the linebreaking algorithm
-pub enum Item {
-    Word(WordId, Font),
-    Symbol(SymbolId, Font),
-    Object(ObjectId),
-    Empty
-}
+
 
 #[derive(Debug)]
 pub struct StreamVec(Vec<Entry>);

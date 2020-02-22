@@ -90,17 +90,6 @@ impl Deref for FontFace {
     }
 }
 
-#[derive(Serialize, Deserialize)]
-#[derive(Hash, Eq, PartialEq, Clone)]
-pub struct Symbol {
-    pub text: String
-}
-impl Borrow<str> for Symbol {
-    fn borrow(&self) -> &str {
-        &*self.text
-    }
-}
-
 pub enum Direction {
     LeftToRight,
     RightToLeft
@@ -109,7 +98,7 @@ pub enum Direction {
 #[derive(Serialize, Deserialize)]
 #[derive(Hash, Eq, PartialEq, Debug, Clone)]
 pub struct Word {
-    pub text: String
+    pub text: String,
 }
 impl Borrow<str> for Word {
     fn borrow(&self) -> &str {
@@ -122,7 +111,6 @@ impl Borrow<str> for Word {
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
 pub enum Item {
     Word(WordId),
-    Symbol(SymbolId),
     Sequence(SequenceId),
     Object(ObjectId)
 }

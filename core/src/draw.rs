@@ -1,5 +1,5 @@
 use crate::*;
-use crate::layout::{Writer, Glue, ColumnLayout, FlexMeasure};
+use crate::layout::{Writer, Glue, ColumnLayout, FlexMeasure, Column, Columns, ItemMeasure};
 use crate::units::Length;
 use crate::text::{grapheme_indices, build_gids};
 use std::collections::hash_map::{HashMap};
@@ -33,11 +33,13 @@ pub enum Marker {
     Start(SequenceId),
     End(SequenceId),
 }
-
+pub struct Pages {
+    pub columns: Columns,
+}
 pub struct Page {
     scene: Scene,
     tags: Vec<(f32, Vec<(f32, Tag)>)>,
-    positions: HashMap<Tag, RectF>,
+    pub positions: HashMap<Tag, RectF>
 }
 impl Page {
     pub fn scene(&self) -> &Scene {
@@ -56,13 +58,14 @@ impl Page {
         }
         None
     }
-    pub fn position(&self, tag: Tag) -> Option<RectF> {
-        let r = self.positions.get(&tag).cloned();
-        debug!("{:?} at {:?}", tag, r);
-        r
-    }
 }
 
+#[derive(Debug, Copy, Clone)]
+pub enum RenderItem {
+    Word(WordId, Font),
+    Object(ObjectId),
+    Empty,
+}
 
 pub struct Cache {
     layout_cache: HashMap<(Font, WordId), Layout>
@@ -91,14 +94,22 @@ impl Cache {
                 let font = ctx.type_design.font;
                 let space = Glue::space(ctx.type_design.word_space);
                 let width = self.word_layout(key, &ctx.storage, font).advance.x();
-                let measure = FlexMeasure::fixed_box(Length::mm(width), ctx.type_design.line_height);
 
-                writer.word(space, space, key, measure, font, tag);
+                let measure = ItemMeasure {
+                    left: FlexMeasure::zero(),
+                    content: FlexMeasure::fixed_box(Length::mm(width), ctx.type_design.line_height),
+                    right: FlexMeasure::zero()
+                };
+                writer.item(space, space, measure, RenderItem::Word(key, font), tag);
             }
             Item::Object(key) => {
                 let obj = ctx.storage.get_object(key);
-                let size = obj.size(ctx);
-                writer.object(Glue::any(), Glue::any(), key, size, tag);
+                let measure = ItemMeasure {
+                    left: FlexMeasure::zero(),
+                    content: obj.size(ctx),
+                    right: FlexMeasure::zero()
+                };
+                writer.item(Glue::any(), Glue::any(), measure, RenderItem::Object(key), tag);
             }
             Item::Sequence(key) => self.render_sequence(writer, ctx, key),
             _ => {}
@@ -117,11 +128,16 @@ impl Cache {
             .. *ctx
         };
 
-        writer.empty(Glue::any(), Glue::None, Tag::Start(seq_id));
+        let measure = ItemMeasure {
+            left: FlexMeasure::zero(),
+            content: FlexMeasure::zero(),
+            right: FlexMeasure::zero()
+        };
+        writer.item(Glue::any(), Glue::None, measure, RenderItem::Empty, Tag::Start(seq_id));
         for (item_id, item) in weave.items() {
             self.render_item(writer, &ctx, Tag::Item(seq_id, item_id), item);
         }
-        writer.empty(Glue::None, Glue::any(), Tag::End(seq_id));
+        writer.item(Glue::None, Glue::any(), measure, RenderItem::Empty, Tag::End(seq_id));
 
         match ctx.type_design.display {
             Display::Block | Display::Paragraph(_) => writer.promote(Glue::hfill()),
@@ -129,7 +145,7 @@ impl Cache {
         }
     }
 
-    pub fn render(&mut self, storage: &Storage, design: &Design, target: &Target, root: SequenceId) -> Vec<Page> {
+    pub fn layout(&mut self, storage: &Storage, design: &Design, target: &Target, root: SequenceId) -> Columns {
         let mut writer = Writer::new();
         let ctx = DrawCtx {
             storage,
@@ -139,67 +155,70 @@ impl Cache {
         };
         self.render_sequence(&mut writer, &ctx, root);
 
-        let mut pages = Vec::new();
         let stream = writer.finish();
-        let layout = ColumnLayout::new(&stream, target.content_box.width, target.content_box.height);
-        for column in layout.columns() {
-            let mut scene = Scene::new();
-            scene.set_bounds(target.media_box.into());
-            scene.set_view_box(target.trim_box.into());
+        let layout = ColumnLayout::new(stream, target.content_box.width, target.content_box.height);
+        layout.columns()
+    }
 
-            let page_style = scene.build_style(PathStyle {
-                fill: Some((255,255,255,255)),
-                stroke: Some(((0,0,0,255), 0.25)),
-                fill_rule: FillRule::NonZero
-            });
-            let glyph_style = scene.build_style(PathStyle {
-                fill: Some((0,0,0,255)),
-                stroke: None,
-                fill_rule: FillRule::NonZero
-            });
-            let mut pb = PathBuilder::new();
-            pb.rect(target.trim_box.into());
-            
-            scene.draw_path(pb.into_outline(), &page_style);
+    pub fn render_page(&mut self, storage: &Storage, target: &Target, design: &Design, column: Column) -> Page {
+        let mut scene = Scene::new();
+        scene.set_bounds(target.media_box.into());
+        scene.set_view_box(target.trim_box.into());
 
-            use crate::layout::Item as LayoutItem;
+        let page_style = scene.build_style(PathStyle {
+            fill: Some((255,255,255,255)),
+            stroke: Some(((0,0,0,255), 0.25)),
+            fill_rule: FillRule::NonZero
+        });
+        let glyph_style = scene.build_style(PathStyle {
+            fill: Some((0,0,0,255)),
+            stroke: None,
+            fill_rule: FillRule::NonZero
+        });
+        let mut pb = PathBuilder::new();
+        pb.rect(target.trim_box.into());
+        
+        scene.draw_path(pb.into_outline(), &page_style);
 
-            let mut line_indices = Vec::new();
-            let mut positions = HashMap::new();
-            let content_box: RectF = target.content_box.into();
-            for (y, line) in column {
-                let mut line_items = Vec::new();
-                for (x, size, item, tag) in line {
-                    let size: Vector2F = size.into();
-                    let p = content_box.origin() + Vector2F::new(x.value as f32, y.value as f32);
-                    match item {
-                        LayoutItem::Word(key, font) => {
-                            let (mut outline, _advance) = self.render_word(key, storage, font);
-                            outline.transform(&Transform2F::from_translation(p));
-                            scene.draw_path(outline, &glyph_style);
-                        }
-                        LayoutItem::Object(key) => {
-                            storage.get_object(key).draw(&ctx, p, size.into(), &mut scene);
-                        }
-                        _ => {}
-                    };
-                    line_items.push((x.value + content_box.origin().x(), tag));
-                    positions.insert(tag, RectF::new(p - Vector2F::new(0.0, size.y()), size));
-                }
-                line_indices.push((y.value + content_box.origin().y(), line_items));
+        let ctx = DrawCtx {
+            storage,
+            design,
+            target,
+            type_design: design.default()
+        };
+
+        let mut line_indices = Vec::new();
+        let mut positions = HashMap::new();
+        let content_box: RectF = target.content_box.into();
+        for (y, line) in column {
+            let mut line_items = Vec::new();
+            for (x, size, item, tag) in line {
+                let size: Vector2F = size.into();
+                let p = content_box.origin() + Vector2F::new(x.value as f32, y.value as f32);
+                match item {
+                    RenderItem::Word(key, font) => {
+                        let (mut outline, _advance) = self.render_word(key, storage, font);
+                        outline.transform(&Transform2F::from_translation(p));
+                        scene.draw_path(outline, &glyph_style);
+                    }
+                    RenderItem::Object(key) => {
+                        storage.get_object(key).draw(&ctx, p, size.into(), &mut scene);
+                    }
+                    _ => {}
+                };
+                line_items.push((x.value + content_box.origin().x(), tag));
+                positions.insert(tag, RectF::new(p - Vector2F::new(0.0, size.y()), size));
             }
-
-
-            pages.push(Page { scene, tags: line_indices, positions });
+            line_indices.push((y.value + content_box.origin().y(), line_items));
         }
 
-        pages
+        Page { scene, tags: line_indices, positions }
     }
 
     pub fn get_position_on_page(&self, storage: &Storage, design: &Design, page: &Page, tag: Tag, byte_pos: usize) -> Option<Vector2F> {
         match storage.get_item(tag)? {
             Item::Word(key) => {
-                let rect = page.position(tag)?;
+                let &rect = page.positions.get(&tag)?;
                 if byte_pos == 0 {
                     return Some(rect.lower_left());
                 }
@@ -228,7 +247,7 @@ impl Cache {
             }
             Item::Sequence(key) => {
                 storage.get_first(key)
-                    .and_then(|(first, _)| page.position(first))
+                    .and_then(|(first, _)| page.positions.get(&first))
                     .map(|rect| rect.lower_left())
             }
             _ => None

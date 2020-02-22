@@ -102,7 +102,7 @@ impl Writer {
                 self.stream.push(Entry::Linebreak(f));
             },
             Glue::Space { breaking, measure }
-             => self.stream.push(Entry::Space(breaking, measure)),
+             => self.stream.push(Entry::Space(measure, breaking)),
             Glue::None => ()
         }
     }
@@ -113,19 +113,13 @@ impl Writer {
         self.state = right;
     }
 
-    pub fn word(&mut self, left: Glue, right: Glue, key: WordId, measure: FlexMeasure, font: Font, tag: Tag) {
-        self.push(left, right, Entry::Word(key, measure, font, tag));
+    pub fn item(&mut self, left: Glue, right: Glue, measure: ItemMeasure, item: RenderItem, tag: Tag) {
+        self.push(left, right, Entry::Item(measure, item, tag));
     }
     pub fn space(&mut self, left: Glue, right: Glue, measure: FlexMeasure, breaking: bool) {
-        self.push(left, right, Entry::Space(breaking, measure));
+        self.push(left, right, Entry::Space(measure, breaking));
     }
-    pub fn object(&mut self, left: Glue, right: Glue, key: ObjectId, measure: FlexMeasure, tag: Tag) {
-        self.push(left, right, Entry::Object(key, measure, tag));
-    }
-    pub fn empty(&mut self, left: Glue, right: Glue, tag: Tag) {
-        self.push(left, right, Entry::Empty(tag));
-    }
-    
+
     #[inline(always)]
     pub fn promote(&mut self, glue: Glue) {
         self.state |= glue;

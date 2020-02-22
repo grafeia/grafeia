@@ -6,7 +6,10 @@ use pathfinder_geometry::{
     transform2d::Transform2F
 };
 use pathfinder_renderer::scene::{Scene, DrawPath};
-use pathfinder_content::fill::FillRule as PaFillRule;
+use pathfinder_content::{
+    fill::FillRule as PaFillRule,
+    effects::BlendMode
+};
 use crate::*;
 use crate::draw::DrawCtx;
 use std::fmt;
@@ -74,7 +77,7 @@ impl SvgObject {
     pub fn new(scale: Scale, data: Vec<u8>) -> Self {
         use usvg::{Tree, Options};
         let tree = Tree::from_data(&data, &Options::default()).unwrap();
-        let scene = BuiltSVG::from_tree(tree).scene;
+        let scene = BuiltSVG::from_tree(&tree).scene;
 
         SvgObject {
             scale,
@@ -128,7 +131,13 @@ impl SvgObject {
         
         for (paint, outline, _) in self.scene.paths() {
             let outline = outline.clone();
-            let new_path = DrawPath::new(outline.transform(tr), scene.push_paint(paint), None, PaFillRule::Winding, String::new());
+            let new_path = DrawPath::new(
+                outline.transform(tr),
+                scene.push_paint(paint),
+                None,
+                PaFillRule::Winding,
+                BlendMode::default(),
+                String::new());
             scene.push_path(new_path);
         }
     }

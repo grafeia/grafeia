@@ -1,6 +1,5 @@
-use grafeia_app::app::NetworkApp;
+use grafeia_app::app::{App, NetworkApp};
 use wasm_bindgen::prelude::*;
-use js_sys::Uint8Array;
 use std::panic;
 use log::{Log, Level};
 
@@ -51,22 +50,18 @@ pub fn run() {
     log::set_max_level(log::LevelFilter::Info);
 }
 
+#[wasm_bindgen]
+pub fn online() {
+    pathfinder_view::show(NetworkApp::new(), pathfinder_view::Config {
+        zoom: false,
+        pan: true
+    });
+}
 
 #[wasm_bindgen]
-pub struct Grafeia(NetworkApp);
-
-#[wasm_bindgen]
-impl Grafeia {
-    #[wasm_bindgen(constructor)]
-    pub fn new() -> Grafeia {
-        Grafeia(NetworkApp::new())
-    }
-
-    #[wasm_bindgen]
-    pub fn show(self) {
-        pathfinder_view::show(self.0, pathfinder_view::Config {
-            zoom: false,
-            pan: true
-        });
-    }
+pub fn offline() {
+    pathfinder_view::show(App::build(), pathfinder_view::Config {
+        zoom: false,
+        pan: true
+    });
 }

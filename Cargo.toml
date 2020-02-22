@@ -10,8 +10,8 @@ members = [
 #[patch."https://github.com/s3bk/winit"]
 #winit = { path = "../winit", features = ["web-sys"]}
 
-#[patch."https://github.com/s3bk/pathfinder_view"]
-#pathfinder_view = { path = "../pathfinder_view"}
+[patch."https://github.com/s3bk/pathfinder_view"]
+pathfinder_view = { path = "../pathfinder_view"}
 
 #[patch."https://github.com/s3bk/vector"]
 #vector = { path = "../vector"}

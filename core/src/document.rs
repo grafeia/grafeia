@@ -260,7 +260,6 @@ pub enum DocumentOp {
 pub struct Storage {
     weaves:  Map<SequenceId, Weave>,
     words:   Map<WordId,     Word>,
-    symbols: Map<SymbolId,   Symbol>,
     objects: Map<ObjectId,   Object>,
     types:   Map<TypeId,     Type>,
     type_names: HashMap<String, TypeId>,
@@ -274,7 +273,6 @@ impl Storage {
         Storage {
             weaves: Map::new(),
             words: Map::new(),
-            symbols: Map::new(),
             objects: Map::new(),
             types: Map::new(),
             type_names: HashMap::new(),
@@ -310,7 +308,6 @@ impl Storage {
         let weave = self.weaves.get(id).unwrap();
         let item = |item: Item| match item {
             Item::Word(key) => self.words.get(key).unwrap().text.as_str(),
-            Item::Symbol(key) => self.symbols.get(key).unwrap().text.as_str(),
             Item::Sequence(_) => "<seq>",
             Item::Object(_) => "<obj>",
         };
@@ -329,9 +326,6 @@ impl Storage {
     }
     pub fn get_word(&self, id: WordId) -> &Word {
         self.words.get(id).unwrap()
-    }
-    pub fn get_symbol(&self, id: SymbolId) -> &Symbol {
-        self.symbols.get(id).unwrap()
     }
     pub fn get_object(&self, id: ObjectId) -> &Object {
         self.objects.get(id).unwrap()
@@ -499,11 +493,12 @@ impl Document {
 
         let atom = weave.create(self.site, prev_id, AtomOp::Add(new_item));
         weave.add(atom);
+        let tag = Tag::Item(seq, atom.id);
         self.storage.log_weave(seq);
         self.pending.push(DocumentOp::SeqOp(seq, atom));
 
         self.link(tag);
-        Tag::Item(seq, atom.id)
+        tag
     }
 
     pub fn create_word(&mut self, text: &str) -> WordId {
