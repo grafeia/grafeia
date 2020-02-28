@@ -1,4 +1,4 @@
-use crate::{Storage, TypeId, Item, Type, Document, Object};
+use crate::{Storage, TypeId, Item, Type, Document, Object, Symbol};
 
 pub struct ContentBuilder {
     document: Document,
@@ -10,8 +10,10 @@ pub struct ContentBuilder {
 impl ContentBuilder {
     pub fn new() -> Self {
         let storage = Storage::new();
-        let mut document = Document::new(storage);
-
+        let document = Document::new(storage);
+        ContentBuilder::with_document(document)
+    }
+    pub fn with_document(mut document: Document) -> Self {
         ContentBuilder {
             document_key: document.create_type(
                 "document",
@@ -62,16 +64,17 @@ pub struct TextBuilder {
 }
 impl TextBuilder {
     pub fn word(mut self, w: &str) -> Self {
-        let word = self.parent.document.create_word(w);
-        self.nodes.push(Item::Word(word));
+        let id = self.parent.document.create_word(w);
+        self.nodes.push(Item::Word(id));
         self
     }
-
+    pub fn symbol(mut self, s: &str) -> Self {
+        let id = self.parent.document.create_symbol(s);
+        self.nodes.push(Item::Symbol(id));
+        self
+    }
     pub fn text(mut self, text: &str) -> Self {
-        for w in text.split_ascii_whitespace() {
-            let word = self.parent.document.create_word(w);
-            self.nodes.push(Item::Word(word));
-        }
+        self.nodes.extend(self.parent.document.create_text(text));
         self
     }
 

@@ -6,7 +6,7 @@ pub struct BranchGenerator<'a> {
     branches: Vec<(StreamVec, Glue)>
 }
 impl<'a> BranchGenerator<'a> {
-    pub fn add(&mut self, mut f: impl FnMut(&mut Writer)) {
+    pub fn add(&mut self, f: impl FnOnce(&mut Writer)) {
         let mut w = self.parent.dup();
         f(&mut w);
         self.branches.push((w.stream, w.state));
@@ -125,7 +125,7 @@ impl Writer {
         self.state |= glue;
     }
 
-    pub fn branch(&mut self, mut f: impl FnMut(&mut BranchGenerator))
+    pub fn branch(&mut self, f: impl FnOnce(&mut BranchGenerator))
     {
         let mut branches = {
             let mut gen = BranchGenerator {

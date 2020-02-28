@@ -6,6 +6,8 @@ use std::hash::Hash;
 use std::fmt;
 use std::borrow::Cow;
 use itertools::Itertools;
+use unicode_categories::UnicodeCategories;
+use unicode_segmentation::UnicodeSegmentation;
 
 #[derive(Serialize, Deserialize)]
 #[derive(Hash, Eq, PartialEq, Copy, Clone, Default, PartialOrd, Ord, Debug)]
@@ -83,7 +85,7 @@ macro_rules! id {
     )* )
 }
 
-id!(WordId, SymbolId, ObjectId, SequenceId, TypeId, FontId);
+id!(WordId, SymbolId, ObjectId, SequenceId, TypeId, FontId, DictId);
 
 #[derive(Serialize, Deserialize)]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
@@ -251,20 +253,23 @@ pub enum DocumentOp {
     SeqOp(SequenceId, Atom),
     CreateSequence(SequenceId, TypeId),
     CreateWord(WordId, Word),
+    CreateSymbol(SymbolId, Symbol),
     CreateType(TypeId, String, Type),
     CreateFont(FontId, FontFace),
-    CreateObject(ObjectId, Object)
+    CreateObject(ObjectId, Object),
+    CreateDictionary(DictId, Dictionary),
 }
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Storage {
     weaves:  Map<SequenceId, Weave>,
     words:   Map<WordId,     Word>,
+    symbols: Map<SymbolId,   Symbol>,
     objects: Map<ObjectId,   Object>,
     types:   Map<TypeId,     Type>,
     type_names: HashMap<String, TypeId>,
     fonts:   Map<FontId,     FontFace>,
-
+    dicts:   Map<DictId,     Dictionary>,
     sites:   Clock<u32>
 }
 
@@ -273,10 +278,12 @@ impl Storage {
         Storage {
             weaves: Map::new(),
             words: Map::new(),
+            symbols: Map::new(),
             objects: Map::new(),
             types: Map::new(),
             type_names: HashMap::new(),
             fonts: Map::new(),
+            dicts: Map::new(),
             sites: Clock::new()
         }
     }
@@ -291,6 +298,9 @@ impl Storage {
             DocumentOp::CreateWord(id, word) => {
                 self.words.insert(id, word);
             }
+            DocumentOp::CreateSymbol(id, symbol) => {
+                self.symbols.insert(id, symbol);
+            }
             DocumentOp::CreateObject(id, object) => {
                 self.objects.insert(id, object);
             }
@@ -301,6 +311,9 @@ impl Storage {
                 self.types.insert(id, typ);
                 self.type_names.insert(name, id);
             }
+            DocumentOp::CreateDictionary(id, dict) => {
+                self.dicts.insert(id, dict);
+            }
         }
     }
 
@@ -308,6 +321,7 @@ impl Storage {
         let weave = self.weaves.get(id).unwrap();
         let item = |item: Item| match item {
             Item::Word(key) => self.words.get(key).unwrap().text.as_str(),
+            Item::Symbol(key) => self.symbols.get(key).unwrap().text.as_str(),
             Item::Sequence(_) => "<seq>",
             Item::Object(_) => "<obj>",
         };
@@ -327,6 +341,9 @@ impl Storage {
     pub fn get_word(&self, id: WordId) -> &Word {
         self.words.get(id).unwrap()
     }
+    pub fn get_symbol(&self, id: SymbolId) -> &Symbol {
+        self.symbols.get(id).unwrap()
+    }
     pub fn get_object(&self, id: ObjectId) -> &Object {
         self.objects.get(id).unwrap()
     }
@@ -335,6 +352,9 @@ impl Storage {
     }
     pub fn get_weave(&self, id: SequenceId) -> &Weave {
         self.weaves.get(id).unwrap()
+    }
+    pub fn get_dict(&self, id: DictId) -> &Dictionary {
+        self.dicts.get(id).unwrap()
     }
 
     pub fn get_last(&self, seq_id: SequenceId) -> Option<(Tag, Item)> {
@@ -376,6 +396,7 @@ pub struct Document {
     pending: Vec<DocumentOp>,
     parents: HashMap<SequenceId, Tag>,
     words: HashMap<String, WordId>,
+    symbols: HashMap<String, SymbolId>,
     root: Option<SequenceId>,
 }
 impl Deref for Document {
@@ -391,6 +412,7 @@ impl Document {
         let pending = Vec::new();
         let parents = HashMap::new();
         let words = HashMap::new();
+        let symbols = HashMap::new();
 
         Document {
             storage,
@@ -398,6 +420,7 @@ impl Document {
             pending,
             parents,
             words,
+            symbols,
             root: None,
         }
     }
@@ -415,6 +438,7 @@ impl Document {
         }
         
         let words = storage.words.iter().map(|(id, word)| (word.text.clone(), id)).collect();
+        let symbols = storage.symbols.iter().map(|(id, symbol)| (symbol.text.clone(), id)).collect();
 
         Document {
             site,
@@ -422,6 +446,7 @@ impl Document {
             pending: Vec::new(),
             parents,
             words,
+            symbols,
             root: Some(root)
         }
     }
@@ -449,6 +474,12 @@ impl Document {
                     }
                     _ => {}
                 }
+            }
+            DocumentOp::CreateWord(id, ref word) => {
+                self.words.insert(word.text.clone(), id);
+            }
+            DocumentOp::CreateSymbol(id, ref symbol) => {
+                self.symbols.insert(symbol.text.clone(), id);
             }
             _ => {}
         }
@@ -568,7 +599,27 @@ impl Document {
         self.pending.push(DocumentOp::CreateFont(id, font));
         id
     }
-    
+    pub fn add_symbol(&mut self, symbol: Symbol) -> SymbolId {
+        let id = self.storage.symbols.create(self.site, symbol.clone());
+        self.symbols.insert(symbol.text.clone(), id);
+        self.pending.push(DocumentOp::CreateSymbol(id, symbol));
+        id
+    }
+    pub fn add_dict(&mut self, dict: Dictionary) -> DictId {
+        let id = self.storage.dicts.create(self.site, dict.clone());
+        self.pending.push(DocumentOp::CreateDictionary(id, dict));
+        id
+    }
+    pub fn load_dict(&mut self, data: &[u8]) -> DictId {
+        use hyphenation::{Standard, Load};
+        use std::io::Cursor;
+        self.add_dict(
+            Dictionary::Standard(Standard::any_from_reader(&mut Cursor::new(data)).unwrap())
+        )
+    }
+    pub fn find_symbol(&self, text: &str) -> Option<SymbolId> {
+        self.symbols.get(text).cloned()
+    }
 
     fn link(&mut self, tag: Tag) {
         if let Some(Item::Sequence(child_id)) = self.storage.get_item(tag) {
@@ -645,5 +696,43 @@ impl Document {
     }
     pub fn get_parent_tag(&self, tag: Tag) -> Option<Tag> {
         self.parents.get(&tag.seq()).cloned()
+    }
+
+    pub fn create_symbol(&mut self, text: &str) -> SymbolId {
+        let id = self.find_symbol(text).unwrap_or_else(|| {
+            // here we go…
+            let mut chars = text.chars();
+            let c = chars.next().expect("empty string");
+            assert!(chars.next().is_none(), "only one char allowed");
+
+            let leading = c.is_punctuation_initial_quote() | c.is_punctuation_open();
+            let trailing = c.is_punctuation_final_quote() | c.is_punctuation_close();
+
+            let overflow_left = c.is_punctuation_initial_quote();
+            let overflow_right = c.is_punctuation_final_quote();
+
+            self.add_symbol(Symbol {
+                text: text.into(),
+                leading,
+                trailing,
+                overflow_left: overflow_left as u8 as f32,
+                overflow_right: overflow_right as u8 as f32,
+            })
+        });
+        id
+    }
+
+    pub fn create_text<'a>(&'a mut self, text: &'a str) -> impl Iterator<Item=Item> + 'a {
+        text.split_word_bounds().filter_map(move |part| {
+            let first_char = part.chars().next().unwrap();
+            if first_char.is_whitespace() {
+                None // nothing to do
+            }
+            else if first_char.is_letter() | first_char.is_number() {
+                Some(Item::Word(self.create_word(part)))
+            } else {
+                Some(Item::Symbol(self.create_symbol(part)))
+            }
+        })
     }
 }

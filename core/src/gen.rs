@@ -22,7 +22,7 @@ impl<G> Iterator for GenIter<G> where G: Generator<Return=()> {
         if self.done {
             return None;
         }
-        match self.gen.as_mut().resume() {
+        match self.gen.as_mut().resume(()) {
             GeneratorState::Yielded(item) => Some(item),
             GeneratorState::Complete(()) => {
                 self.done = true;

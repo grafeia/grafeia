@@ -1,9 +1,22 @@
 let ws_callback = null;
 let ws = null;
-function ws_log(msg) {
-    console.log(msg);
+let log_div = document.getElementById("log");
+const log_fns = {
+    1: s => console.error(s),
+    2: s => console.warn(s),
+    3: s => console.info(s),
+    4: s => console.debug(s),
+    5: s => console.trace(s),
+}
+function log(level, msg) {
+    log_fns[level](msg);
     if (ws) {
         ws.send(msg);
+    }
+    if (level <= 3) {
+        let p = document.createElement("p");
+        p.appendChild(document.createTextNode(msg));
+        log_div.appendChild(p);
     }
 };
 function ws_send(data) {
@@ -19,9 +32,6 @@ function set_scroll_factors(factors) {
     // line delta factor x and y
     factors[2] = 30.;
     factors[3] = 10.0;
-}
-function set_ws_callback(cb) {
-    ws_callback = cb;
 }
 function blob2ArrayBuffer(blob) {
     if (blob.arrayBuffer) {
@@ -62,38 +72,60 @@ function connect() {
         });
     });
 }
-let log_div = document.getElementById("log");
-function log_err(msg) {
-    ws_log(msg);
-    let p = document.createElement("p");
-    p.appendChild(document.createTextNode(msg));
-    log_div.appendChild(p);
-}
-var ws_log = function(msg) {
-    console.log(msg);
+let view;
+function init_view(socket) {
+    let canvas = document.getElementById("canvas");
+    let capture = document.getElementById("capture");
+    if (socket) {
+        view = wasm_bindgen.online(canvas);
+    } else {
+        view = wasm_bindgen.offline(canvas);
+    }
+
+    let requested = false;
+    function animation_frame(time) {
+        requested = false;
+        view.animation_frame(time);
+    }
+    function check(_request_redraw) {
+        let request_redraw = view.idle();
+        if (request_redraw && !requested) {
+            window.requestAnimationFrame(animation_frame);
+            requested = true;
+        }
+    }
+
+    window.addEventListener("keydown", e => check(view.key_down(e)), {capture: true});
+    window.addEventListener("keyup", e => check(view.key_up(e)), {capture: true});
+    capture.addEventListener("mousemove", e => check(view.mouse_move(e)));
+    capture.addEventListener("mouseup", e => check(view.mouse_up(e)));
+    capture.addEventListener("mousedown", e => check(view.mouse_down(e)));
+    window.addEventListener("resize", e => check(view.resize(e)));
+    window.addEventListener("paste", e => check(view.paste(e)));
+    capture.addEventListener("input", e => check(view.input(e.data)));
+    ws_callback = data => check(view.data(data));
 }
 
 async function init() {
+    log(3, "ready for wasm");
+    await wasm_bindgen("pkg/grafeia_web_bg.wasm").catch(function(e) {
+        log(1, e);
+    });
+    log(3, "wasm loaded");
+
     if (window.location.host !== "grafeia.github.io") {
         try {
             ws = await connect();
         } catch {
-            log_err("can't connect logger");
+            log(2, "can't connect logger");
         }
     }
-    log_err("ready for wasm");
-    await wasm_bindgen("pkg/grafeia_web_bg.wasm").catch(function(e) {
-        log_err(e);
-    });
-    log_err("wasm loaded");
+
     try {
-        if (ws) {
-            wasm_bindgen.online();
-        } else {
-            wasm_bindgen.offline();
-        }
+        init_view(ws);
+        view.idle();
     } catch (e) {
-        log_err(e);
+        log(1, e);
     }
 }
 init();

@@ -1,5 +1,5 @@
 use std::fmt::Debug;
-use crate::{Tag};
+use crate::{Tag, Length};
 use crate::draw::RenderItem;
 
 // private mods
@@ -15,22 +15,6 @@ pub use self::writer::{Writer};
 pub use self::flex::FlexMeasure;
 pub use self::columns::*;
 
-// to flex or not to flex?
-#[allow(unused_variables)]
-pub trait Flex {
-    fn measure(&self, line_width: f32) -> FlexMeasure;
-    
-    fn flex(&self, factor: f32) -> FlexMeasure {
-        let m = self.measure(0.);
-        FlexMeasure {
-            width: m.width,
-            shrink: m.shrink / factor,
-            stretch: m.stretch * factor,
-            height: m.height
-        }
-    }
-}
-
 #[derive(Clone)]
 pub struct Style {
     pub word_space: FlexMeasure,
@@ -38,9 +22,16 @@ pub struct Style {
 
 #[derive(Debug, Clone, Copy)]
 pub struct ItemMeasure {
+    // normal width
     pub content: FlexMeasure,
+
+    // how much to overflow in to the left margin
     pub left:    FlexMeasure,
+
+    // how much to overflow into the right margin
     pub right:   FlexMeasure,
+
+    pub height:  Length,
 }
 
 /// used as input to the line breaking algorithm

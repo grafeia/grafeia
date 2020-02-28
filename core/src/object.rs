@@ -40,7 +40,7 @@ pub enum Scale {
 }
 
 impl Object {
-    pub fn size(&self, ctx: &DrawCtx) -> FlexMeasure {
+    pub fn size(&self, ctx: &DrawCtx) -> (FlexMeasure, Length) {
         match *self {
             Object::Svg(ref svg) => svg.size(ctx),
             Object::TeX(ref tex) => tex.size(ctx),
@@ -103,7 +103,7 @@ impl Serialize for SvgObject {
     }
 }
 impl SvgObject {
-    fn size(&self, ctx: &DrawCtx) -> FlexMeasure {
+    fn size(&self, ctx: &DrawCtx) -> (FlexMeasure, Length) {
         let svg_size = self.scene.view_box().size();
         let (w, h) = match self.scale {
             Scale::FitWidth => (Some(ctx.target.content_box.width), None),
@@ -117,7 +117,7 @@ impl SvgObject {
             (None, Some(h)) => (h * (svg_size.x() / svg_size.y()), h),
             _ => unreachable!()
         };
-        FlexMeasure::fixed_box(w, h)
+        (FlexMeasure::fixed(w), h)
     }
 
     fn draw(&self, _ctx: &DrawCtx, origin: Vector2F, size: Vector2F, scene: &mut Scene) {
@@ -181,7 +181,7 @@ impl TeX {
         let layout = rex::layout::engine::layout(&mut parse, settings.layout_settings());
         (layout, settings)
     }
-    fn size(&self, ctx: &DrawCtx) -> FlexMeasure {
+    fn size(&self, ctx: &DrawCtx) -> (FlexMeasure, Length) {
         let (layout, settings) = self.build(ctx);
         let cvt = |size| Length::mm((settings.font_size * f64::from(size) / f64::from(UNITS_PER_EM)) as f32);
 
@@ -193,7 +193,7 @@ impl TeX {
             _ => ctx.type_design.line_height
         };
 
-        FlexMeasure::fixed_box(cvt(width), height)
+        (FlexMeasure::fixed(cvt(width)), height)
     }
     fn draw(&self, ctx: &DrawCtx, origin: Vector2F, size: Vector2F, scene: &mut Scene) {
         let (layout, settings) = self.build(ctx);
@@ -212,7 +212,7 @@ impl TeX {
         let renderer = TexRenderer {
             settings: &settings,
             style: scene.build_style(PathStyle {
-                fill: Some((0, 0, 0, 200)),
+                fill: Some((0, 0, 0, 255)),
                 stroke: None, fill_rule:
                 FillRule::NonZero
             }),

@@ -57,37 +57,45 @@ impl Debug for ParagraphLayout {
 
 struct Context {
     measure:    FlexMeasure,
+    overflow:   FlexMeasure, // how much to overflow into the margin
+    height:     Length,
     path:       u64,    // one bit for each branch on this line
     begin:      usize,  // begin of line or branch
     pos:        usize,  // calculation starts here
     score:      f32,    // score at pos
     branches:   u8,     // number of branches so far (<= 64)
-    overflow:   FlexMeasure, // how much to overflow into the margin
 }
 impl Context {
     fn new(start: usize, score: f32) -> Context {
         Context {
             measure:    FlexMeasure::zero(),
+            overflow:   FlexMeasure::zero(),
+            height:     Length::zero(),
             path:       0,
             begin:      start,
             pos:        start,
             branches:   0,
             score:      score,
-            overflow:   FlexMeasure::zero(),
         }
     }
-    fn add_item(&mut self, measure: ItemMeasure, is_first: bool) {
-        if !is_first {
-            self.measure += measure.left;
+    fn add_item(&mut self, item: ItemMeasure, is_first: bool) {
+        if is_first {
+            self.measure -= item.left;
         }
-        self.measure += self.overflow + measure.content;
-        self.overflow = measure.right;
+        self.measure += item.content;
+        self.overflow = item.right;
+
+        // TODO: vertical alignment
+        self.height = self.height.max(item.height);
+    }
+    fn add_space(&mut self, s: FlexMeasure) {
+        self.measure += s;
+        self.overflow = FlexMeasure::zero();
     }
     fn line(&self) -> FlexMeasure {
-        self.measure
+        self.measure - self.overflow
     }
     fn fill(&mut self, width: Length) {
-        self.measure = self.line();
         self.measure.extend(width);
         self.overflow = FlexMeasure::zero();
     }
@@ -151,7 +159,7 @@ impl ParagraphLayout {
                     }
                     
                     // add width now.
-                    c.measure += s;
+                    c.add_space(s);
                 }
                 Entry::Linebreak(fill) => {
                     if fill {
@@ -208,7 +216,7 @@ impl ParagraphLayout {
             path:   c.path,
             factor: factor,
             score:  break_score,
-            height: c.measure.height
+            height: c.height
         };
         self.nodes[n] = Some(match self.nodes[n] {
             Some(line) if break_score <= line.score => line,
@@ -457,13 +465,18 @@ impl<'a> Iterator for Line<'a> {
 
             match self.layout.items[pos] {
                 Entry::Item(m, item, tag) => {
-                    if !is_first {
-                        self.measure += m.left;
+                    if is_first {
+                        // the first item on the line gets moved to the left by m.left
+                        self.measure -= m.left;
                     }
+
+                    // take current location
                     let x = self.measure.at(self.line.factor);
-                    self.measure += m.content + m.right;
-                    let total = m.left + m.content + m.right;
-                    let size = Size::new(total.at(self.line.factor), total.height);
+
+                    // add the width of the item
+                    self.measure += m.content;
+
+                    let size = Size::new(m.content.at(self.line.factor), m.height);
                     return Some((x, size, item, tag));
                 },
                 Entry::Space(s, _) => {

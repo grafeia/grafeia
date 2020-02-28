@@ -27,6 +27,11 @@ use std::ops::{Deref};
 use std::sync::Arc;
 use pathfinder_content::outline::Outline;
 use serde::{Serialize, Deserialize, Serializer};
+use hyphenation::{
+    Standard,
+    extended::Extended,
+    Hyphenator
+};
 
 use crate::layout::FlexMeasure;
 use crate::{*};
@@ -96,21 +101,63 @@ pub enum Direction {
 }
 
 #[derive(Serialize, Deserialize)]
-#[derive(Hash, Eq, PartialEq, Debug, Clone)]
-pub struct Word {
-    pub text: String,
+#[derive(Debug, Clone)]
+pub enum Dictionary {
+    Standard(Standard),
+    Extended(Extended)
 }
-impl Borrow<str> for Word {
-    fn borrow(&self) -> &str {
-        &*self.text
+impl Dictionary {
+    pub fn hyphenate(&self, word: &str, mut f: impl FnMut(usize, &str, &str)) {
+        match *self {
+            Dictionary::Standard(ref dict) => {
+                for index in dict.hyphenate(word).breaks {
+                    let (left, right) = word.split_at(index);
+                    f(index, left, right);
+                }
+            }
+            Dictionary::Extended(ref dict) => {
+                for (index, sub) in dict.hyphenate(word).breaks {
+                    match sub {
+                        None => {
+                            let (left, right) = word.split_at(index);
+                            f(index, left, right);
+                        },
+                        Some(ref subr) => {
+                            let (tail, head) = subr.substitution.split_at(subr.breakpoint);
+                            let left = [&word[.. index - subr.left], tail].concat();
+                            let right = [head, &word[index + subr.right ..]].concat();
+                            f(index, &left, &right);
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
+pub const HYPHEN_MARK: char = '\u{AD}';
+
+#[derive(Serialize, Deserialize)]
+#[derive(Hash, Eq, PartialEq, Debug, Clone)]
+pub struct Word {
+    // contains HYPHEN_MARK to indicate possible breaking points
+    pub text: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Symbol {
+    pub text: String,
+    pub trailing: bool,
+    pub leading: bool,
+    pub overflow_left: f32,
+    pub overflow_right: f32,
+}
 
 #[derive(Serialize, Deserialize)]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
 pub enum Item {
     Word(WordId),
+    Symbol(SymbolId),
     Sequence(SequenceId),
     Object(ObjectId)
 }
@@ -186,7 +233,9 @@ pub struct TypeDesign {
     pub display:        Display,
     pub font:           Font,
     pub word_space:     FlexMeasure,
-    pub line_height:    Length
+    pub line_height:    Length,
+    pub dictionary:     DictId,
+    pub hyphen:         SymbolId,
 }
 
 // this is a font. it contains all baked in settings

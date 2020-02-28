@@ -1,26 +1,20 @@
 use grafeia_app::app::{App, NetworkApp};
 use wasm_bindgen::prelude::*;
+use web_sys::HtmlCanvasElement;
 use std::panic;
 use log::{Log, Level};
+use pathfinder_view::{WasmView, Config};
 
 #[wasm_bindgen]
 extern {
-    fn ws_log(msg: &str);
-    fn log_err(msg: &str);
+    fn log(level: u8, msg: &str);
 }
 
 fn panic_hook(info: &panic::PanicInfo) {
-    let mut msg = info.to_string();
-    log_err(&msg);
+    let msg = info.to_string();
+    log(Level::Error as u8, &msg);
 
     console_error_panic_hook::hook(info);
-}
-
-pub fn log(record: &log::Record) {
-    match record.level() {
-        Level::Error => log_err(&record.args().to_string()),
-        level => ws_log(&format!("{:?} {}", level, record.args()))
-    }
 }
 
 struct WebsocketLogger;
@@ -35,7 +29,7 @@ impl Log for WebsocketLogger {
             return;
         }
 
-        log(record);
+        log(record.level() as u8, &record.args().to_string());
     }
 
     fn flush(&self) {}
@@ -51,17 +45,25 @@ pub fn run() {
 }
 
 #[wasm_bindgen]
-pub fn online() {
-    pathfinder_view::show(NetworkApp::new(), pathfinder_view::Config {
-        zoom: false,
-        pan: true
-    });
+pub fn online(canvas: HtmlCanvasElement) -> WasmView {
+    WasmView::new(
+        canvas,
+        Config {
+            zoom: false,
+            pan: false
+        },
+        Box::new(NetworkApp::new()) as _
+    )
 }
 
 #[wasm_bindgen]
-pub fn offline() {
-    pathfinder_view::show(App::build(), pathfinder_view::Config {
-        zoom: false,
-        pan: true
-    });
+pub fn offline(canvas: HtmlCanvasElement) -> WasmView {
+    WasmView::new(
+        canvas,
+        Config {
+            zoom: false,
+            pan: false
+        },
+        Box::new(App::build()) as _
+    )
 }

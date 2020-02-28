@@ -90,6 +90,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cff77d8686867eceff3105329d4698d96c2391c176d5d03adc90c7389162b5b8"
 
 [[package]]
+name = "atlatl"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "32bb156841d2e2a888185b5b4f7d93d30efd3a40d1671d9628ab39536adb7ea2"
+dependencies = [
+ "fnv",
+ "num-traits 0.2.11",
+ "serde",
+]
+
+[[package]]
 name = "atty"
 version = "0.2.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -849,8 +860,9 @@ dependencies = [
 
 [[package]]
 name = "glutin"
-version = "0.22.0"
-source = "git+https://github.com/s3bk/glutin/#4aec18a7e2045c1d1d411a709221ca37ed6dbaa4"
+version = "0.23.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cf22d4e90c55d9be9f2ad52410e7a2c0d7e9c99d93a13df73a672e7ef4e8c7f7"
 dependencies = [
  "android_glue",
  "cgl",
@@ -870,13 +882,14 @@ dependencies = [
  "parking_lot",
  "wayland-client",
  "winapi 0.3.8",
- "winit",
+ "winit 0.21.0",
 ]
 
 [[package]]
 name = "glutin_egl_sys"
 version = "0.1.4"
-source = "git+https://github.com/s3bk/glutin/#4aec18a7e2045c1d1d411a709221ca37ed6dbaa4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "772edef3b28b8ad41e4ea202748e65eefe8e5ffd1f4535f1219793dbb20b3d4c"
 dependencies = [
  "gl_generator 0.13.1",
  "winapi 0.3.8",
@@ -884,13 +897,15 @@ dependencies = [
 
 [[package]]
 name = "glutin_emscripten_sys"
-version = "0.1.0"
-source = "git+https://github.com/s3bk/glutin/#4aec18a7e2045c1d1d411a709221ca37ed6dbaa4"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "80de4146df76e8a6c32b03007bc764ff3249dcaeb4f675d68a06caf1bac363f1"
 
 [[package]]
 name = "glutin_gles2_sys"
-version = "0.1.3"
-source = "git+https://github.com/s3bk/glutin/#4aec18a7e2045c1d1d411a709221ca37ed6dbaa4"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "07e853d96bebcb8e53e445225c3009758c6f5960d44f2543245f6f07b567dae0"
 dependencies = [
  "gl_generator 0.13.1",
  "objc",
@@ -898,8 +913,9 @@ dependencies = [
 
 [[package]]
 name = "glutin_glx_sys"
-version = "0.1.5"
-source = "git+https://github.com/s3bk/glutin/#4aec18a7e2045c1d1d411a709221ca37ed6dbaa4"
+version = "0.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "08c243de74d6cf5ea100c788826d2fb9319de315485dd4b310811a663b3809c3"
 dependencies = [
  "gl_generator 0.13.1",
  "x11-dl",
@@ -907,8 +923,9 @@ dependencies = [
 
 [[package]]
 name = "glutin_wgl_sys"
-version = "0.1.3"
-source = "git+https://github.com/s3bk/glutin/#4aec18a7e2045c1d1d411a709221ca37ed6dbaa4"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a93dba7ee3a0feeac0f437141ff25e71ce2066bcf1a706acab1559ffff94eb6a"
 dependencies = [
  "gl_generator 0.13.1",
 ]
@@ -940,7 +957,7 @@ dependencies = [
  "vector",
  "wasm-bindgen",
  "web-sys",
- "winit",
+ "winit 0.20.0",
 ]
 
 [[package]]
@@ -949,6 +966,7 @@ version = "0.1.0"
 dependencies = [
  "bincode",
  "font",
+ "hyphenation",
  "indexmap",
  "itertools",
  "lazy_static",
@@ -962,6 +980,8 @@ dependencies = [
  "rex",
  "serde",
  "slotmap",
+ "unicode-segmentation",
+ "unicode_categories",
  "usvg",
  "vector",
 ]
@@ -1150,6 +1170,28 @@ dependencies = [
  "tokio",
  "tower-service",
  "want",
+]
+
+[[package]]
+name = "hyphenation"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0493c6fb308d367d0aed7acd341adbc1c2f216c135073e4b73b652c5d0d6b54c"
+dependencies = [
+ "atlatl",
+ "bincode",
+ "hyphenation_commons",
+ "serde",
+]
+
+[[package]]
+name = "hyphenation_commons"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9e3461ab51107f7beb8e0c46606d6eb7dfa48880014a29c170afad3ce6b25add"
+dependencies = [
+ "atlatl",
+ "serde",
 ]
 
 [[package]]
@@ -1351,7 +1393,7 @@ version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5cc7ad3d82c845bdb5dde34ffdcc7a5fb4d2996e1e1ee0f19c33bc80e15196b9"
 dependencies = [
- "num-traits 0.1.43",
+ "num-traits 0.2.11",
 ]
 
 [[package]]
@@ -1860,12 +1902,14 @@ dependencies = [
 [[package]]
 name = "pathfinder_view"
 version = "0.1.0"
+source = "git+https://github.com/s3bk/pathfinder_view#c5e0d93721d5d1c714f7c3333a189af4b67d3bb2"
 dependencies = [
+ "bincode",
  "cfg-if",
  "gl",
  "glutin",
  "js-sys",
- "log 0.4.8",
+ "log 0.3.9",
  "pathfinder_color",
  "pathfinder_export",
  "pathfinder_geometry",
@@ -1876,7 +1920,7 @@ dependencies = [
  "serde",
  "wasm-bindgen",
  "web-sys",
- "winit",
+ "winit 0.21.0",
 ]
 
 [[package]]
@@ -3212,6 +3256,35 @@ dependencies = [
  "wasm-bindgen",
  "wayland-client",
  "web-sys",
+ "winapi 0.3.8",
+ "x11-dl",
+]
+
+[[package]]
+name = "winit"
+version = "0.21.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "65a5c1a5ef76ac31cc97ad29489acdbed2178f3fc12ca00ee6cb11d60adb5a3a"
+dependencies = [
+ "android_glue",
+ "bitflags",
+ "cocoa",
+ "core-foundation",
+ "core-graphics",
+ "core-video-sys",
+ "dispatch",
+ "instant",
+ "lazy_static",
+ "libc",
+ "log 0.4.8",
+ "mio",
+ "mio-extras",
+ "objc",
+ "parking_lot",
+ "percent-encoding",
+ "raw-window-handle",
+ "smithay-client-toolkit",
+ "wayland-client",
  "winapi 0.3.8",
  "x11-dl",
 ]

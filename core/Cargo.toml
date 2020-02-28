@@ -26,5 +26,8 @@ usvg = { version = "0.9", default-features = false }
 bincode = "*"
 lazy_static = "1.4.0"
 itertools = "0.8.2"
+unicode_categories = "*"
+unicode-segmentation = "*"
+hyphenation = "*"
 
 rex = { path = "../../ReX" }

@@ -1,4 +1,3 @@
-use crate::layout::Flex;
 use std::ops::*;
 use crate::units::*;
 use serde::{Serialize, Deserialize};
@@ -8,25 +7,15 @@ use serde::{Serialize, Deserialize};
 pub struct FlexMeasure {
     pub shrink:     Length,
     pub stretch:    Length,
-    pub width:      Length,
-    pub height:     Length
+    pub length:     Length,
 }
 
 impl FlexMeasure {
-    pub fn fixed(width: Length) -> FlexMeasure {
+    pub fn fixed(length: Length) -> FlexMeasure {
         FlexMeasure {
-            shrink:  width,
-            stretch: width,
-            width:   width,
-            height:  Length::zero()
-        }
-    }
-    pub fn fixed_box(width: Length, height: Length) -> FlexMeasure {
-        FlexMeasure {
-            shrink:  width,
-            stretch: width,
-            width:   width,
-            height
+            shrink:  length,
+            stretch: length,
+            length:  length,
         }
     }
 
@@ -34,36 +23,36 @@ impl FlexMeasure {
     /// factor =  0 => self.width,
     /// factor = +1 => self.stretch
     pub fn at(&self, factor: f32) -> Length {
-        (if factor < 0. {
-            self.width - self.shrink
-        } else {
-            self.stretch - self.width
-        } * factor) + self.width
+        let delta = match factor < 0. {
+            false => self.stretch - self.length,
+            true => self.length - self.shrink,
+        };
+        delta * factor + self.length
     }
     
     /// calculate the factor that yields the given length.
     /// Or None when there is none.
     // m.at(m.factor(w).unwrap()) == w
-    pub fn factor(&self, width: Length) -> Option<f32> {
-        debug_assert!(self.shrink <= self.width);
-        debug_assert!(self.width <= self.stretch);
-        if width < self.shrink || width > self.stretch {
+    pub fn factor(&self, length: Length) -> Option<f32> {
+        debug_assert!(self.shrink <= self.length);
+        debug_assert!(self.length <= self.stretch);
+        if length < self.shrink || length > self.stretch {
             return None;
         }
         
-        if width == self.width {
+        if length == self.length {
             Some(0.0)
         } else {
-            let delta = width - self.width; // d > 0 => stretch, d < 0 => shrink
+            let delta = length - self.length; // d > 0 => stretch, d < 0 => shrink
             if delta >= Length::zero() {
-                if self.stretch > self.width {
-                    Some(delta / (self.stretch - self.width))
+                if self.stretch > self.length {
+                    Some(delta / (self.stretch - self.length))
                 } else {
                     Some(1.0)
                 }
             } else {
-                if self.shrink < self.width {
-                    Some(delta / (self.width - self.shrink))
+                if self.shrink < self.length {
+                    Some(delta / (self.length - self.shrink))
                 } else {
                     Some(-1.0)
                 }
@@ -71,12 +60,12 @@ impl FlexMeasure {
         }
     }
     
-    pub fn extend(&mut self, width: Length) {
-        if width > self.width {
-            self.width = width;
+    pub fn extend(&mut self, length: Length) {
+        if length > self.length {
+            self.length = length;
         }
-        if width > self.stretch {
-            self.stretch = width;
+        if length > self.stretch {
+            self.stretch = length;
         }
     }
 }
@@ -85,28 +74,36 @@ impl Add for FlexMeasure {
     
     fn add(self, rhs: FlexMeasure) -> FlexMeasure {
         FlexMeasure {
-            width:   self.width   + rhs.width,
+            length:  self.length  + rhs.length,
             stretch: self.stretch + rhs.stretch,
             shrink:  self.shrink  + rhs.shrink,
-            height:  self.height.max(rhs.height)
+        }
+    }
+}
+impl Sub for FlexMeasure {
+    type Output = FlexMeasure;
+    
+    fn sub(self, rhs: FlexMeasure) -> FlexMeasure {
+        FlexMeasure {
+            length:  self.length  - rhs.length,
+            stretch: self.stretch - rhs.stretch,
+            shrink:  self.shrink  - rhs.shrink,
         }
     }
 }
 impl FlexMeasure {
     pub fn zero() -> FlexMeasure {
         FlexMeasure {
-            width: Length::zero(),
+            length:  Length::zero(),
             stretch: Length::zero(),
-            shrink: Length::zero(),
-            height: Length::zero()
+            shrink:  Length::zero(),
         }
     }
     pub fn max(self, other: FlexMeasure) -> FlexMeasure {
         FlexMeasure {
-            width:   self.width  .max(other.width),
+            length:  self.length .max(other.length),
             stretch: self.stretch.max(other.stretch),
             shrink:  self.shrink .max(other.shrink),
-            height:  self.height .max(other.height)
         }
     }
 }
@@ -117,18 +114,16 @@ impl Default for FlexMeasure {
 }
 impl AddAssign for FlexMeasure {
     fn add_assign(&mut self, rhs: FlexMeasure) {
-        self.width += rhs.width;
+        self.length  += rhs.length;
         self.stretch += rhs.stretch;
-        self.shrink += rhs.shrink;
-        self.height = self.height.max(rhs.height);
+        self.shrink  += rhs.shrink;
     }
 }
 impl SubAssign for FlexMeasure {
     fn sub_assign(&mut self, rhs: FlexMeasure) {
-        self.width -= rhs.width;
+        self.length  -= rhs.length;
         self.stretch -= rhs.stretch;
-        self.shrink -= rhs.shrink;
-        self.height = self.height.max(rhs.height);
+        self.shrink  -= rhs.shrink;
     }
 }
 impl Mul<f32> for FlexMeasure {
@@ -136,24 +131,9 @@ impl Mul<f32> for FlexMeasure {
     
     fn mul(self, f: f32) -> FlexMeasure {
         FlexMeasure {
-            width:      self.width * f,
+            length:     self.length * f,
             stretch:    self.stretch * f,
             shrink:     self.shrink * f,
-            height:     self.height
-        }
-    }
-}
-impl Flex for FlexMeasure {
-    fn measure(&self, _: f32) -> FlexMeasure {
-        *self
-    }
-    
-    fn flex(&self, _: f32) -> FlexMeasure {
-        FlexMeasure {
-            width: self.width,
-            shrink: self.shrink,
-            stretch: self.stretch,
-            height: self.height
         }
     }
 }

@@ -13,6 +13,11 @@ use pathfinder_geometry::{
 use pathfinder_content::outline::Outline;
 use pathfinder_renderer::scene::Scene;
 
+#[inline]
+fn select<T>(cond: bool, a: T, b: T) -> T {
+    if cond { a } else { b }
+}
+
 #[derive(Clone)]
 struct Context<'a> {
     storage:     &'a Storage,
@@ -27,19 +32,42 @@ struct Layout {
     advance: Vector2F,
     glyphs: Vec<(font::GlyphId, Transform2F)>,
 }
+impl Layout {
+    fn render(&self, font: &FontFace, root_tr: Transform2F) -> Outline {
+        let mut outline = Outline::new();
+        for &(gid, tr) in self.glyphs.iter() {
+            if let Some(glyph) = font.glyph(gid) {
+                for contour in glyph.path.contours() {
+                    let mut contour = contour.clone();
+                    contour.transform(&(root_tr * tr));
+                    outline.push_contour(contour);
+                }
+            }
+        }
+        outline
+    }
+}
 
 #[derive(Hash, PartialEq, Eq)]
 pub enum Marker {
     Start(SequenceId),
     End(SequenceId),
 }
+pub enum RenderedWord {
+    Full(RectF),
+    // part before hyphenation, part after hyphenation, index at which the word was broken
+    Before(RectF, u16),
+    After(RectF, u16),
+    Both(RectF, RectF, u16)
+}
 pub struct Pages {
     pub columns: Columns,
 }
 pub struct Page {
     scene: Scene,
-    tags: Vec<(f32, Vec<(f32, Tag)>)>,
-    pub positions: HashMap<Tag, RectF>
+    items: Vec<(f32, Vec<(f32, Tag)>)>,
+    pub positions: HashMap<Tag, RectF>,
+    pub word_positions: HashMap<Tag, RenderedWord>,
 }
 impl Page {
     pub fn scene(&self) -> &Scene {
@@ -47,7 +75,7 @@ impl Page {
     }
     pub fn find(&self, p: Vector2F) -> Option<(Tag, Vector2F)> {
         // find the first line with y value greater than p.y
-        for &(y, ref line) in self.tags.iter() {
+        for &(y, ref line) in self.items.iter() {
             if y > p.y() {
                 for &(x, tag) in line.iter().rev() {
                     if x <= p.x() {
@@ -62,13 +90,22 @@ impl Page {
 
 #[derive(Debug, Copy, Clone)]
 pub enum RenderItem {
-    Word(WordId, Font),
+    Word(WordId, WordPart, Font),
+    Symbol(SymbolId, Font),
     Object(ObjectId),
     Empty,
 }
 
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+pub enum WordPart {
+    Full,
+    Before(u16),
+    After(u16)
+}
+
 pub struct Cache {
-    layout_cache: HashMap<(Font, WordId), Layout>
+    word_layout_cache: HashMap<(Font, WordId, WordPart), Layout>,
+    symbol_layout_cache: HashMap<(Font, SymbolId), Layout>
 }
 impl Default for Cache {
     fn default() -> Self {
@@ -79,40 +116,105 @@ pub struct DrawCtx<'a> {
     pub storage: &'a Storage,
     pub design: &'a Design,
     pub target: &'a Target,
-    pub type_design: &'a TypeDesign
+    pub type_design: &'a TypeDesign,
 }
 impl Cache {
     pub fn new() -> Cache {
         Cache {
-            layout_cache: HashMap::new()
+            word_layout_cache: HashMap::new(),
+            symbol_layout_cache: HashMap::new(),
         }
+    }
+
+    fn render_word_part(&mut self, writer: &mut Writer, ctx: &DrawCtx, tag: Tag, font: Font, key: WordId, text: &str, part: WordPart) {
+        let layout = self.word_layout_cache.entry((font, key, part))
+            .or_insert_with(|| {
+                let face = ctx.storage.get_font_face(font.font_face);
+                Cache::build_word_layout(text, face, font.size.value)
+            });
+        let space = Glue::space(ctx.type_design.word_space);
+        let width = layout.advance.x();
+        let measure = ItemMeasure {
+            left: FlexMeasure::zero(),
+            content: FlexMeasure::fixed(Length::mm(width)),
+            right: FlexMeasure::zero(),
+            height: ctx.type_design.line_height
+        };
+        writer.item(space, space, measure, RenderItem::Word(key, part, font), tag);
+    }
+
+    fn render_word(&mut self, writer: &mut Writer, ctx: &DrawCtx, tag: Tag, key: WordId) {
+        let dict = ctx.storage.get_dict(ctx.type_design.dictionary);
+        let font = ctx.type_design.font;
+        let word = ctx.storage.get_word(key);
+        let space = Glue::space(ctx.type_design.word_space);
+        let hyphen = ctx.storage.get_symbol(ctx.type_design.hyphen);
+        let text = &word.text;
+
+        writer.branch(|gen| {
+            gen.add(|writer| self.render_word_part(writer, ctx, tag, font, key, text, WordPart::Full));
+            dict.hyphenate(text, |index, before, after| {
+                debug!("{} -> {}‐{} ({})", word.text, before, after, index);
+
+                gen.add(|writer| {
+                    self.render_word_part(writer, ctx, tag, font, key, before, WordPart::Before(index as u16));
+                    
+                    // hyphen
+                    let width = Length::mm(self.symbol_layout(ctx.type_design.hyphen, &ctx.storage, font).advance.x());
+                    writer.item(
+                        Glue::None,
+                        Glue::newline(),
+                        ItemMeasure {
+                            left: FlexMeasure::fixed(width * hyphen.overflow_left),
+                            content: FlexMeasure::fixed(width),
+                            right: FlexMeasure::fixed(width * hyphen.overflow_right),
+                            height: ctx.type_design.line_height
+                        },
+                        RenderItem::Symbol(ctx.type_design.hyphen, font),
+                        tag
+                    );
+
+                    self.render_word_part(writer, ctx, tag, font, key, after, WordPart::After(index as u16));
+                });
+            });
+        });
+    }
+
+    fn render_symbol(&mut self, writer: &mut Writer, ctx: &DrawCtx, tag: Tag, key: SymbolId) {
+        let symbol = ctx.storage.get_symbol(key);
+        let font = ctx.type_design.font;
+        let space = Glue::space(ctx.type_design.word_space);
+        let width = Length::mm(self.symbol_layout(key, &ctx.storage, font).advance.x());
+        writer.item(
+            select(symbol.trailing, Glue::None, space),
+            select(symbol.leading, Glue::None, space),
+            ItemMeasure {
+                left: FlexMeasure::fixed(width * symbol.overflow_left),
+                content: FlexMeasure::fixed(width),
+                right: FlexMeasure::fixed(width * symbol.overflow_right),
+                height: ctx.type_design.line_height
+            },
+            RenderItem::Symbol(key, font),
+            tag
+        );
     }
 
     fn render_item(&mut self, writer: &mut Writer, ctx: &DrawCtx, tag: Tag, item: Item) {
         match item {
-            Item::Word(key) => {
-                let font = ctx.type_design.font;
-                let space = Glue::space(ctx.type_design.word_space);
-                let width = self.word_layout(key, &ctx.storage, font).advance.x();
-
-                let measure = ItemMeasure {
-                    left: FlexMeasure::zero(),
-                    content: FlexMeasure::fixed_box(Length::mm(width), ctx.type_design.line_height),
-                    right: FlexMeasure::zero()
-                };
-                writer.item(space, space, measure, RenderItem::Word(key, font), tag);
-            }
+            Item::Word(key) => self.render_word(writer, ctx, tag, key),
+            Item::Symbol(key) => self.render_symbol(writer, ctx, tag, key),
             Item::Object(key) => {
                 let obj = ctx.storage.get_object(key);
+                let (width, height) = obj.size(ctx);
                 let measure = ItemMeasure {
                     left: FlexMeasure::zero(),
-                    content: obj.size(ctx),
-                    right: FlexMeasure::zero()
+                    content: width,
+                    right: FlexMeasure::zero(),
+                    height
                 };
                 writer.item(Glue::any(), Glue::any(), measure, RenderItem::Object(key), tag);
             }
             Item::Sequence(key) => self.render_sequence(writer, ctx, key),
-            _ => {}
         }
     }
     fn render_sequence(&mut self, writer: &mut Writer, ctx: &DrawCtx, seq_id: SequenceId) {
@@ -131,7 +233,8 @@ impl Cache {
         let measure = ItemMeasure {
             left: FlexMeasure::zero(),
             content: FlexMeasure::zero(),
-            right: FlexMeasure::zero()
+            right: FlexMeasure::zero(),
+            height: Length::zero()
         };
         writer.item(Glue::any(), Glue::None, measure, RenderItem::Empty, Tag::Start(seq_id));
         for (item_id, item) in weave.items() {
@@ -189,45 +292,94 @@ impl Cache {
 
         let mut line_indices = Vec::new();
         let mut positions = HashMap::new();
+        let mut word_positions = HashMap::new();
         let content_box: RectF = target.content_box.into();
         for (y, line) in column {
             let mut line_items = Vec::new();
             for (x, size, item, tag) in line {
                 let size: Vector2F = size.into();
                 let p = content_box.origin() + Vector2F::new(x.value as f32, y.value as f32);
+                let rect = RectF::new(p - Vector2F::new(0.0, size.y()), size);
                 match item {
-                    RenderItem::Word(key, font) => {
-                        let (mut outline, _advance) = self.render_word(key, storage, font);
-                        outline.transform(&Transform2F::from_translation(p));
+                    RenderItem::Word(key, part, font) => {
+                        let layout = self.word_layout_cache.get(&(font, key, part)).unwrap();
+                        let font = storage.get_font_face(font.font_face);
+                        let outline = layout.render(font, Transform2F::from_translation(p));
                         scene.draw_path(outline, &glyph_style);
+
+                        use std::collections::hash_map::Entry;
+                        match (part, word_positions.entry(tag)) {
+                            (WordPart::Full, Entry::Vacant(e)) => {
+                                e.insert(RenderedWord::Full(rect));
+                            }
+                            (WordPart::Before(idx), Entry::Vacant(e)) => {
+                                e.insert(RenderedWord::Before(rect, idx));
+                            }
+                            (WordPart::After(idx), Entry::Vacant(e)) => {
+                                e.insert(RenderedWord::After(rect, idx));
+                            }
+                            (WordPart::After(idx), Entry::Occupied(mut e)) => {
+                                match *e.get() {
+                                    RenderedWord::Before(prev_rect, idx2) => {
+                                        assert_eq!(idx, idx2);
+                                        e.insert(RenderedWord::Both(prev_rect, rect, idx));
+                                    }
+                                    _ => panic!("invalid state")
+                                }
+                            },
+                            _ => panic!()
+                        }
+                    }
+                    RenderItem::Symbol(key, font) => {
+                        let layout = self.symbol_layout(key, storage, font);
+                        let font = storage.get_font_face(font.font_face);
+                        let outline = layout.render(font, Transform2F::from_translation(p));
+                        scene.draw_path(outline, &glyph_style);
+                        line_items.push((p.x(), tag));
+                        positions.insert(tag, rect);
                     }
                     RenderItem::Object(key) => {
                         storage.get_object(key).draw(&ctx, p, size.into(), &mut scene);
+                        line_items.push((p.x(), tag));
+                        positions.insert(tag, rect);
                     }
-                    _ => {}
+                    RenderItem::Empty => {
+                        line_items.push((p.x(), tag));
+                        positions.insert(tag, rect);
+                    }
                 };
-                line_items.push((x.value + content_box.origin().x(), tag));
-                positions.insert(tag, RectF::new(p - Vector2F::new(0.0, size.y()), size));
             }
             line_indices.push((y.value + content_box.origin().y(), line_items));
         }
 
-        Page { scene, tags: line_indices, positions }
+        Page { scene, items: line_indices, positions, word_positions }
     }
 
     pub fn get_position_on_page(&self, storage: &Storage, design: &Design, page: &Page, tag: Tag, byte_pos: usize) -> Option<Vector2F> {
         match storage.get_item(tag)? {
             Item::Word(key) => {
-                let &rect = page.positions.get(&tag)?;
-                if byte_pos == 0 {
-                    return Some(rect.lower_left());
-                }
                 let seq = storage.get_weave(tag.seq());
                 let type_design = design.get_type_or_default(seq.typ());
                 let word = storage.get_word(key);
                 let face = storage.get_font_face(type_design.font.font_face);
+
+                let (off, rect, part) = match *page.word_positions.get(&tag)? {
+                    RenderedWord::Full(rect) => (0, rect, WordPart::Full),
+                    RenderedWord::Before(rect, idx) => (0, rect, WordPart::Before(idx)),
+                    RenderedWord::After(rect, idx) => (idx as usize, rect, WordPart::After(idx)),
+                    RenderedWord::Both(rect, _, idx) if byte_pos < (idx as usize) => (0, rect, WordPart::Before(idx)),
+                    RenderedWord::Both(_, rect, idx) => (idx as usize, rect, WordPart::After(idx))
+                };
+                if off > byte_pos {
+                    return None;
+                }
+                let byte_pos = byte_pos - off;
+
+                if byte_pos == 0 {
+                    return Some(rect.lower_left());
+                }
                 let grapheme_indices = grapheme_indices(face, &word.text);
-                let layout = self.layout_cache.get(&(type_design.font, key)).unwrap();
+                let layout = self.word_layout_cache.get(&(type_design.font, key, part)).unwrap();
 
                 let interpolate = |(idx_a, pos_a), (idx_b, pos_b), idx| -> Vector2F {
                     if idx == idx_b { return pos_b; }
@@ -245,6 +397,10 @@ impl Cache {
 
                 Some(rect.lower_left() + interpolate(last, (word.text.len(), layout.advance), byte_pos))
             }
+            Item::Symbol(_) => {
+                let &rect = page.positions.get(&tag)?;
+                Some(rect.lower_right())
+            }
             Item::Sequence(key) => {
                 storage.get_first(key)
                     .and_then(|(first, _)| page.positions.get(&first))
@@ -260,7 +416,8 @@ impl Cache {
             let word = storage.get_word(key);
             let face = storage.get_font_face(type_design.font.font_face);
             let grapheme_indices = grapheme_indices(face, &word.text);
-            let layout = self.layout_cache.get(&(type_design.font, key)).unwrap();
+
+            let layout = self.word_layout_cache.get(&(type_design.font, key, WordPart::Full)).unwrap();
 
             if offset >= layout.advance.x() {
                 return Some((layout.advance, word.text.len()));
@@ -274,18 +431,20 @@ impl Cache {
         }
         None
     }
-    fn word_layout(&mut self, word: WordId, storage: &Storage, font: Font) -> &Layout {
-        self.layout_cache.entry((font, word))
-            .or_insert_with(|| Cache::build_word_layout(word, storage, font))
+    fn symbol_layout(&mut self, symbol: SymbolId, storage: &Storage, font: Font) -> &Layout {
+        self.symbol_layout_cache.entry((font, symbol))
+            .or_insert_with(|| {
+                let text = &storage.get_symbol(symbol).text;
+                let face = storage.get_font_face(font.font_face);
+                Cache::build_word_layout(text, face, font.size.value)
+            })
     }
 
-    fn build_word_layout(word: WordId, storage: &Storage, font: Font) -> Layout {
-        let word = storage.get_word(word);
-        let face = storage.get_font_face(font.font_face);
+    fn build_word_layout(text: &str, face: &FontFace, size: f32) -> Layout {
         let mut last_gid = None;
-        let gids = build_gids(face, &word.text);
+        let gids = build_gids(face, text);
 
-        let transform = Transform2F::from_scale(Vector2F::splat(font.size.value))
+        let transform = Transform2F::from_scale(Vector2F::splat(size))
          * Transform2F::from_scale(Vector2F::new(1.0, -1.0))
          * face.font_matrix();
         
@@ -306,22 +465,5 @@ impl Cache {
             advance: transform * offset,
             glyphs
         }
-    }
-
-    fn render_word(&mut self, word: WordId, storage: &Storage, font: Font) -> (Outline, Vector2F) {
-        let layout = self.word_layout(word, storage, font);
-        let font = storage.get_font_face(font.font_face);
-
-        let mut word_outline = Outline::new();
-        for &(gid, tr) in layout.glyphs.iter() {
-            if let Some(glyph) = font.glyph(gid) {
-                for contour in glyph.path.contours() {
-                    let mut contour = contour.clone();
-                    contour.transform(&tr);
-                    word_outline.push_contour(contour);
-                }
-            }
-        }
-        (word_outline, layout.advance)
     }
 }

@@ -8,8 +8,7 @@ use pathfinder_geometry::{
     vector::Vector2F,
     rect::RectF
 };
-use pathfinder_view::{Interactive, State as ViewState};
-use winit::event::{ElementState, VirtualKeyCode, ModifiersState};
+use pathfinder_view::{Interactive, Context, ElementState, KeyEvent, KeyCode, Modifiers};
 use vector::{PathBuilder, PathStyle, Surface, FillRule};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_categories::UnicodeCategories;
@@ -88,6 +87,7 @@ impl App {
     pub fn import_markdown(file: &str) -> Self {
         let storage = Storage::new();
         let mut document = Document::new(storage);
+        build::symbols(&mut document);
 
         let data = std::fs::read(file).unwrap();
         let text = String::from_utf8(data).unwrap();
@@ -201,7 +201,7 @@ impl App {
                             self.cursor = Some(Cursor {
                                 tag,
                                 pos,
-                                page_pos: rect.lower_right() + Vector2F::new(0.5 * typ.word_space.width.value, 0.0),
+                                page_pos: rect.lower_right() + Vector2F::new(0.5 * typ.word_space.length.value, 0.0),
                             });
                         } else {
                             self.cursor = None;
@@ -426,10 +426,9 @@ impl App {
         }
     }
 
-    fn op(&mut self, op: DocumentOp) -> bool {
+    fn op(&mut self, op: DocumentOp) {
         self.document.exec_op(op);
         self.render();
-        true
     }
 
 }
@@ -514,7 +513,7 @@ impl Interactive for App {
                     scene.draw_path(pb.into_outline(), &underline_style);
                 }
             };
-            let word_space = type_design.word_space.width.value;
+            let word_space = type_design.word_space.length.value;
             match cursor.tag {
                 Tag::Start(seq) => {
                     mark_seq(&mut scene, self.page_position(0, Tag::End(seq)).unwrap().lower_left(), 0.5 * word_space);
@@ -555,7 +554,7 @@ impl Interactive for App {
 
         scene
     }
-    fn mouse_input(&mut self, page: usize, pos: Vector2F, state: ElementState) -> bool {
+    fn mouse_input(&mut self, ctx: &mut Context, page: usize, pos: Vector2F, state: ElementState) {
         let old_cursor = self.cursor.take();
 
         dbg!(pos, state);
@@ -573,24 +572,26 @@ impl Interactive for App {
             }
         }
 
-        self.cursor != old_cursor
+        if self.cursor != old_cursor {
+            ctx.update_scene();
+        }
     }
 
-    fn keyboard_input(&mut self, state: ElementState, keycode: VirtualKeyCode, modifiers: ModifiersState) -> bool {
-        if state == ElementState::Released {
-            return false;
+    fn keyboard_input(&mut self, ctx: &mut Context, event: &mut KeyEvent) {
+        if event.state == ElementState::Released {
+            return;
         }
 
-        let (update, s) = match (keycode, modifiers.shift()) {
-            (VirtualKeyCode::Right, false) => (false, self.cursor_op(CursorOp::GraphemeRight)),
-            (VirtualKeyCode::Right, true) => (false, self.cursor_op(CursorOp::ItemRight)),
-            (VirtualKeyCode::Left, false) => (false, self.cursor_op(CursorOp::GraphemeLeft)),
-            (VirtualKeyCode::Left, true) => (false, self.cursor_op(CursorOp::ItemLeft)),
-            (VirtualKeyCode::Back, false) => (true, self.text_op(TextOp::DeletePrevGrapheme)),
-            (VirtualKeyCode::Back, true) => (true, self.text_op(TextOp::DeletePrevItem)),
-            (VirtualKeyCode::Delete, false) => (true, self.text_op(TextOp::DeleteNextGrapheme)),
-            (VirtualKeyCode::Delete, true) => (true, self.text_op(TextOp::DeleteNextItem)),
-            (VirtualKeyCode::Return, false) => (true, self.text_op(TextOp::NewSequence)),
+        let (update, s) = match (event.keycode, event.modifiers.shift) {
+            (KeyCode::Right, false) => (false, self.cursor_op(CursorOp::GraphemeRight)),
+            (KeyCode::Right, true) => (false, self.cursor_op(CursorOp::ItemRight)),
+            (KeyCode::Left, false) => (false, self.cursor_op(CursorOp::GraphemeLeft)),
+            (KeyCode::Left, true) => (false, self.cursor_op(CursorOp::ItemLeft)),
+            (KeyCode::Back, false) => (true, self.text_op(TextOp::DeletePrevGrapheme)),
+            (KeyCode::Back, true) => (true, self.text_op(TextOp::DeletePrevItem)),
+            (KeyCode::Delete, false) => (true, self.text_op(TextOp::DeleteNextGrapheme)),
+            (KeyCode::Delete, true) => (true, self.text_op(TextOp::DeleteNextItem)),
+            (KeyCode::Return, false) => (true, self.text_op(TextOp::NewSequence)),
             _ => (false, None)
         };
         if update & s.is_some() {
@@ -599,13 +600,11 @@ impl Interactive for App {
         if let Some((tag, pos)) = s {
             info!("new tag: {:?}", tag);
             self.set_cursor_to(tag, pos);
-            true
-        } else {
-            false
+            ctx.update_scene();
         }
     }
 
-    fn char_input(&mut self, c: char) -> bool {
+    fn char_input(&mut self, ctx: &mut Context, c: char) {
         let s = match c {
             // backspace
             ' ' => self.text_op(TextOp::Split),
@@ -615,21 +614,12 @@ impl Interactive for App {
         if let Some((tag, pos)) = s {
             self.render();
             self.set_cursor_to(tag, pos);
-            true
-        } else {
-            false
+            ctx.update_scene();
         }
     }
-    fn exit(&mut self) {
+    fn exit(&mut self, ctx: &mut Context) {
         self.clean();
         self.store()
-    }
-    fn save_state(&self, state: ViewState) {
-        store_data("view", &bincode::serialize(&state).unwrap())
-    }
-    fn load_state(&self) -> Option<ViewState> {
-        let data = load_data("view")?;
-        bincode::deserialize(&data).ok()
     }
 }
 
@@ -671,35 +661,8 @@ impl Connection {
     fn platform_send(&self, _data: Vec<u8>) {
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
-    fn platform_init(&mut self, _emit: impl Fn(ServerCommand<'static>) + 'static) {
-    }
-    #[cfg(target_arch = "wasm32")]
-    fn platform_init(&mut self, emit: impl Fn(ServerCommand<'static>) + 'static) {
-        use js_sys::{Uint8Array, Function};
-        use wasm_bindgen::{JsCast};
-    
-        #[wasm_bindgen]
-        extern {
-            fn set_ws_callback(cb: &Function);
-        }
-        let closure = Closure::wrap(Box::new(move |data: &Uint8Array| {
-            let data = data.to_vec();
-            match ServerCommand::<'static>::decode(&data) {
-                Ok(val) => {
-                    info!("recieved event");
-                    emit(val);
-                }
-                Err(_) => warn!("invalid data")
-            }
-        }) as Box<Fn(&Uint8Array)>);
-        set_ws_callback(closure.as_ref().unchecked_ref());
-        closure.forget();
-    }
 }
 impl Interactive for NetworkApp {
-    type Event = ServerCommand<'static>;
-
     fn title(&self) -> String {
         "γραφείο".into()
     }
@@ -728,27 +691,27 @@ impl Interactive for NetworkApp {
             _ => 1
         }
     }
-    fn mouse_input(&mut self, page: usize, pos: Vector2F, state: ElementState) -> bool {
+    fn mouse_input(&mut self, ctx: &mut Context, page: usize, pos: Vector2F, state: ElementState) {
         match self.state {
-            NetworkState::Connected(ref mut app) => app.mouse_input(page, pos, state),
-            _ => false
+            NetworkState::Connected(ref mut app) => app.mouse_input(ctx, page, pos, state),
+            _ => {}
         }
     }
 
-    fn keyboard_input(&mut self, state: ElementState, keycode: VirtualKeyCode, modifiers: ModifiersState) -> bool {
+    fn keyboard_input(&mut self, ctx: &mut Context, event: &mut KeyEvent) {
         match self.state {
-            NetworkState::Connected(ref mut app) => app.keyboard_input(state, keycode, modifiers),
-            _ => false
+            NetworkState::Connected(ref mut app) => app.keyboard_input(ctx, event),
+            _ => {}
         }
     }
 
-    fn char_input(&mut self, c: char) -> bool {
+    fn char_input(&mut self, ctx: &mut Context, c: char) {
         match self.state {
-            NetworkState::Connected(ref mut app) => app.char_input(c),
-            _ => false
+            NetworkState::Connected(ref mut app) => app.char_input(ctx, c),
+            _ => {}
         }
     }
-    fn exit(&mut self) {
+    fn exit(&mut self, ctx: &mut Context) {
         /*
         match self.state {
             NetworkState::Connected(ref mut app) => app.exit(),
@@ -756,14 +719,8 @@ impl Interactive for NetworkApp {
         }
         */
     }
-    fn save_state(&self, state: ViewState) {
-        store_data("view", &bincode::serialize(&state).unwrap())
-    }
-    fn load_state(&self) -> Option<ViewState> {
-        let data = load_data("view")?;
-        bincode::deserialize(&data).ok()
-    }
-    fn event(&mut self, event: Self::Event) -> bool {
+    fn event(&mut self, ctx: &mut Context, data: Vec<u8>) {
+        let event = ServerCommand::<'static>::decode(&data).unwrap();
         match event {
             ServerCommand::Welcome(site) => info!("-> Welcome({:?})", site),
             ServerCommand::Document(_) => info!("-> Document"),
@@ -772,29 +729,30 @@ impl Interactive for NetworkApp {
 
         match self.state {
             NetworkState::Connected(ref mut app) => match event {
-                ServerCommand::Op(op) => app.op(op.into_owned()),
-                _ => false
+                ServerCommand::Op(op) => {
+                    app.op(op.into_owned());
+                    ctx.update_scene();
+                }
+                _ => {}
             },
             NetworkState::Connecting { ref mut site } => match event {
                 ServerCommand::Welcome(id) => {
                     *site = Some(id);
                     self.conn.emit(ClientCommand::GetAll);
-                    false
                 }
                 ServerCommand::Document(state) => {
                     let site = site.expect("got Document before SiteId");
                     self.state = NetworkState::Connected(App::from_state(state, site));
-                    true
+                    ctx.update_scene();
                 }
-                _ => false
+                _ => {}
             }
         }
     }
-    fn init(&mut self, emit: impl Fn(Self::Event) + 'static) {
-        self.conn.platform_init(emit);
+    fn init(&mut self, ctx: &mut Context) {
         self.conn.emit(ClientCommand::Join);
     }
-    fn idle(&mut self) {
+    fn idle(&mut self, ctx: &mut Context) {
         match self.state {
             NetworkState::Connected(ref mut app) => {
                 for op in app.document.drain_pending() {

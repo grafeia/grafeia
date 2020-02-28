@@ -1,5 +1,6 @@
 use pulldown_cmark::{Parser, Event, Tag, CodeBlockKind};
 use grafeia_core::*;
+use crate::build::DICT_EN_GB;
 use std::mem::replace;
 
 pub fn markdown_design(document: &mut Document) -> Design {
@@ -13,6 +14,16 @@ pub fn markdown_design(document: &mut Document) -> Design {
         &include_bytes!("../../../data/GFSDidot.otf")[..]
     );
     
+    let hyphen = document.add_symbol(Symbol {
+        text: "‐".into(),
+        leading: false,
+        trailing: true,
+        overflow_left: 0.0,
+        overflow_right: 1.0
+    });
+
+    let dictionary = document.load_dict(DICT_EN_GB);
+
     let default = TypeDesign {
         display:        Display::Paragraph(Length::mm(0.0)),
         font:           Font {
@@ -20,12 +31,13 @@ pub fn markdown_design(document: &mut Document) -> Design {
             size: Length::mm(5.0)
         },
         word_space: FlexMeasure {
-            height:  Length::zero(),
             shrink:  Length::mm(2.0),
-            width:   Length::mm(3.0),
+            length:  Length::mm(3.0),
             stretch: Length::mm(5.0)
         },
-        line_height: Length::mm(6.0)
+        line_height: Length::mm(6.0),
+        dictionary,
+        hyphen,
     };
     let mut design = Design::new("default design".into(), default);
     for (i, &size) in [15.0, 12.0, 10.0, 8.0, 6.0, 5.0f32].iter().enumerate() {
@@ -39,12 +51,13 @@ pub fn markdown_design(document: &mut Document) -> Design {
                     size: Length::mm(size)
                 },
                 word_space: FlexMeasure {
-                    height:  Length::zero(),
                     shrink:  Length::mm(0.2 * size),
-                    width:   Length::mm(0.3 * size),
+                    length:  Length::mm(0.3 * size),
                     stretch: Length::mm(0.5 * size)
                 },
-                line_height: Length::mm(1.25 * size)
+                line_height: Length::mm(1.25 * size),
+                dictionary,
+                hyphen,
             }
         );
     }
@@ -57,12 +70,13 @@ pub fn markdown_design(document: &mut Document) -> Design {
                 size: Length::mm(5.0)
             },
             word_space: FlexMeasure {
-                height:  Length::zero(),
                 shrink:  Length::mm(2.0),
-                width:   Length::mm(3.0),
+                length:  Length::mm(3.0),
                 stretch: Length::mm(5.0)
             },
-            line_height: Length::mm(6.0)
+            line_height: Length::mm(6.0),
+            dictionary,
+            hyphen,
         }
     );
     design.set_type(
@@ -74,12 +88,31 @@ pub fn markdown_design(document: &mut Document) -> Design {
                 size: Length::mm(5.0)
             },
             word_space: FlexMeasure {
-                height:  Length::zero(),
                 shrink:  Length::mm(2.0),
-                width:   Length::mm(3.0),
+                length:  Length::mm(3.0),
                 stretch: Length::mm(5.0)
             },
-            line_height: Length::mm(6.0)
+            line_height: Length::mm(6.0),
+            dictionary,
+            hyphen,
+        }
+    );
+    design.set_type(
+        document.find_type("list-item").unwrap(),
+        TypeDesign {
+            display:        Display::Paragraph(Length::mm(10.0)),
+            font:           Font {
+                font_face: coramont_regular,
+                size: Length::mm(5.0)
+            },
+            word_space: FlexMeasure {
+                shrink:  Length::mm(2.0),
+                length:  Length::mm(3.0),
+                stretch: Length::mm(5.0)
+            },
+            line_height: Length::mm(6.0),
+            dictionary,
+            hyphen,
         }
     );
     design.set_type(
@@ -91,12 +124,13 @@ pub fn markdown_design(document: &mut Document) -> Design {
                 size: Length::mm(5.0)
             },
             word_space: FlexMeasure {
-                height:  Length::zero(),
                 shrink:  Length::mm(2.0),
-                width:   Length::mm(3.0),
+                length:  Length::mm(3.0),
                 stretch: Length::mm(5.0)
             },
-            line_height: Length::mm(6.0)
+            line_height: Length::mm(6.0),
+            dictionary,
+            hyphen,
         }
     );
     design
@@ -117,11 +151,7 @@ pub fn define_types(document: &mut Document) {
     add_type("inline-code", "Inline Code");
     add_type("block-code", "Code in block form");
     add_type("list", "Unnumbered list of items");
-}
-
-fn text_items<'a>(document: &'a mut Document, text: &'a str) -> impl Iterator<Item=Item> + 'a {
-    text.split(char::is_whitespace).filter(|&s| s.len() > 0)
-        .map(move |s| Item::Word(document.create_word(s)))
+    add_type("list-item", "A list items");
 }
 
 pub fn import_markdown(document: &mut Document, text: &str) -> SequenceId {
@@ -131,6 +161,7 @@ pub fn import_markdown(document: &mut Document, text: &str) -> SequenceId {
     let block_quote = document.find_type("blockquote").unwrap();
     let inline_code = document.find_type("inline-code").unwrap();
     let list = document.find_type("list").unwrap();
+    let list_item = document.find_type("list-item").unwrap();
     let _block_code = document.find_type("block-code").unwrap();
     let headings: Vec<TypeId> = (1 ..= 6)
         .map(|level| document.find_type(&format!("header_{}", level)).unwrap())
@@ -145,6 +176,7 @@ pub fn import_markdown(document: &mut Document, text: &str) -> SequenceId {
         dbg!(&event);
         match event {
             Event::Start(tag) => {
+                let mut inner_items = vec![];
                 let key = match tag {
                     Tag::Paragraph => paragraph,
                     Tag::Heading(level) => headings.get(level as usize).expect("invalid heading level").clone(),
@@ -152,8 +184,8 @@ pub fn import_markdown(document: &mut Document, text: &str) -> SequenceId {
                     Tag::Emphasis => emphasis,
                     Tag::List(None) => list,
                     Tag::Item => {
-                        items.extend(text_items(document, "·"));
-                        paragraph
+                        inner_items.extend(document.create_text("·"));
+                        list_item
                     }
                     Tag::CodeBlock(lang) => {
                         let mut code = String::new();
@@ -178,7 +210,7 @@ pub fn import_markdown(document: &mut Document, text: &str) -> SequenceId {
                     }
                     _ => panic!("tag {:?} not implemented", tag)
                 };
-                stack.push((current_key, replace(&mut items, vec![])));
+                stack.push((current_key, replace(&mut items, inner_items)));
                 current_key = key;
             }
             Event::End(_) => {
@@ -189,10 +221,10 @@ pub fn import_markdown(document: &mut Document, text: &str) -> SequenceId {
                 current_key = parent_key;
             }
             Event::Text(text) => {
-                items.extend(text_items(document, text.as_ref()));
+                items.extend(document.create_text(text.as_ref()));
             }
             Event::Code(text) => {
-                let text_items: Vec<_> = text_items(document, text.as_ref()).collect();
+                let text_items: Vec<_> = document.create_text(text.as_ref()).collect();
                 let id = document.creat_seq_with_items(inline_code, text_items);
                 items.push(Item::Sequence(id));
             }
