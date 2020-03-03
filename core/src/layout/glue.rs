@@ -1,6 +1,6 @@
 use std::ops::{BitOr, BitOrAssign};
 use std::fmt;
-use super::FlexMeasure;
+use super::{FlexMeasure, Length};
 
 #[derive(Copy, Clone, Debug)]
 pub enum Glue {
@@ -10,7 +10,8 @@ pub enum Glue {
         measure:    FlexMeasure
     },
     Newline {
-        fill:       bool
+        fill:       bool,
+        height:     Length
     }
 }
 
@@ -35,9 +36,9 @@ impl BitOr for Glue {
              => Space { breaking: false, measure: a.max(b) },
             
             // Newline wins over Breaking
-            (Newline { fill: a }, Space { breaking: true, .. }) |
-            (Space { breaking: true, .. }, Newline { fill: a })
-             => Newline { fill: a },
+            (Newline { fill, height }, Space { breaking: true, .. }) |
+            (Space { breaking: true, .. }, Newline { fill, height })
+             => Newline { fill, height },
             
             (Space { breaking: true, measure: a }, Space { breaking: true,  measure: b })
              => Space { breaking: true, measure: a.max(b) },
@@ -45,8 +46,8 @@ impl BitOr for Glue {
             (Space { breaking: false, measure: a }, Space { breaking: false,  measure: b })
              => Space { breaking: false, measure: a.max(b) },
              
-            (Newline { fill: a }, Newline { fill: b })
-             => Newline { fill: a | b }
+            (Newline { fill: a, height: h_a }, Newline { fill: b, height: h_b })
+             => Newline { fill: a | b, height: h_a.max(h_b) }
         }
     }
 }
@@ -63,11 +64,11 @@ impl Glue {
     pub fn nbspace(measure: FlexMeasure) -> Glue {
         Glue::Space { breaking: false, measure }
     }
-    pub fn newline() -> Glue {
-        Glue::Newline { fill: false }
+    pub fn newline(height: Length) -> Glue {
+        Glue::Newline { fill: false, height }
     }
-    pub fn hfill() -> Glue {
-        Glue::Newline { fill: true }
+    pub fn hfill(height: Length) -> Glue {
+        Glue::Newline { fill: true, height }
     }
     pub fn any() -> Glue {
         Glue::Space { breaking: true, measure: FlexMeasure::zero() }
@@ -80,7 +81,7 @@ impl fmt::Display for Glue {
             Glue::None => Ok(()),
             Glue::Space { breaking: true, .. } => write!(f, "␣"),
             Glue::Space { breaking: false, .. } => write!(f, "~"),
-            Glue::Newline { fill: _ } => write!(f, "␤")
+            Glue::Newline { .. } => write!(f, "␤")
         }
     }
 }

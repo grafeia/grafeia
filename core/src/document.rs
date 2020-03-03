@@ -5,6 +5,8 @@ use std::cmp::{PartialEq, PartialOrd};
 use std::hash::Hash;
 use std::fmt;
 use std::borrow::Cow;
+use std::io::{Read, Write};
+use std::error::Error;
 use itertools::Itertools;
 use unicode_categories::UnicodeCategories;
 use unicode_segmentation::UnicodeSegmentation;
@@ -379,6 +381,8 @@ pub struct State<'a> {
     pub root: SequenceId
 }
 impl<'a> State<'a> {
+    const MAGIC: [u8; 8] = *b"grafeia\0";
+    const VERSION: u32 = 6;
     pub fn borrowed<'b: 'a>(&'b self) -> State<'b> {
         use std::borrow::Borrow;
         State {
@@ -387,6 +391,22 @@ impl<'a> State<'a> {
             storage: Cow::Borrowed(self.storage.borrow()),
             root: self.root
         }
+    }
+    pub fn store(&self, mut writer: impl Write) -> Result<(), Box<dyn Error>> {
+        writer.write_all(&Self::MAGIC)?;
+        bincode::serialize_into(&mut writer, &Self::VERSION)?;
+        bincode::serialize_into(writer, self)?;
+        Ok(())
+    }
+    pub fn load(mut reader: impl Read) -> Result<Self, Box<dyn Error>> {
+        let mut magic = [0; 8];
+        reader.read_exact(&mut magic)?;
+        assert_eq!(magic, Self::MAGIC);
+
+        let version: u32 = bincode::deserialize_from(&mut reader)?;
+        assert_eq!(version, Self::VERSION);
+
+        Ok(bincode::deserialize_from(reader)?)
     }
 }
 
@@ -700,6 +720,7 @@ impl Document {
 
     pub fn create_symbol(&mut self, text: &str) -> SymbolId {
         let id = self.find_symbol(text).unwrap_or_else(|| {
+            dbg!(text);
             // here we go…
             let mut chars = text.chars();
             let c = chars.next().expect("empty string");

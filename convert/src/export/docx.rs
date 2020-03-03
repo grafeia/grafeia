@@ -42,7 +42,7 @@ fn add_sequence<'a>(writer: &mut DocxWriter<'a>, storage: &'a Storage, key: Sequ
     let type_design = design.get_type_or_default(seq.typ());
     match type_design.display {
         Display::Inline => {},
-        Display::Paragraph(_) | Display::Block => writer.flush_para(),
+        Display::Paragraph(_, _) | Display::Block(_) => writer.flush_para(),
     }
 
     for item in seq.render() {
@@ -54,9 +54,9 @@ fn add_sequence<'a>(writer: &mut DocxWriter<'a>, storage: &'a Storage, key: Sequ
     }
 }
 
-pub fn export_docx(document: &Document, design: &Design) -> Vec<u8> {
+pub fn export_docx(state: &State) -> Vec<u8> {
     let mut writer = DocxWriter::new();
-    add_sequence(&mut writer, &**document, document.root(), design);
+    add_sequence(&mut writer, &state.storage, state.root, &state.design);
     writer.flush_para();
     writer.finish()
 }

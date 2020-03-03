@@ -1,6 +1,6 @@
-use crate::app::App;
 use grafeia_core::*;
 use grafeia_core::builder::*;
+use grafeia_core::object::{tex::*, svg::*};
 use std::borrow::Cow;
 
 pub static DICT_EN_GB: &'static [u8] = &*include_bytes!("../../data/dictionaries/en-gb.standard.bincode");
@@ -41,7 +41,7 @@ pub fn symbols(document: &mut Document) {
     }
 }
 
-pub fn build() -> App {
+pub fn build() -> State<'static> {
     info!("build()");
 
     let storage = Storage::new();
@@ -105,7 +105,8 @@ pub fn build() -> App {
             stretch: Length::mm(3.0)
         },
         line_height: Length::mm(5.0),
-        hyphen,
+        indent:      Length::zero(),
+        hyphen: Some(hyphen),
         dictionary
     };
 
@@ -114,7 +115,12 @@ pub fn build() -> App {
     design.set_type(
         document.find_type("chapter").unwrap(),
         TypeDesign {
-            display:        Display::Block,
+            display:        Display::Block(
+                VerticalPadding {
+                    above: Length::zero(),
+                    below: Length::mm(4.0)
+                }
+            ),
             font:           Font {
                 font_face,
                 size:  Length::mm(8.0)
@@ -125,14 +131,21 @@ pub fn build() -> App {
                 stretch: Length::mm(6.0)
             },
             line_height: Length::mm(10.0),
-            hyphen,
+            indent:      Length::zero(),
+            hyphen: None,
             dictionary
         }
     );
     design.set_type(
         document.find_type("paragraph").unwrap(),
         TypeDesign {
-            display:        Display::Paragraph(Length::mm(10.0)),
+            display:        Display::Paragraph(
+                Length::mm(10.0),
+                VerticalPadding {
+                    above: Length::zero(),
+                    below: Length::mm(4.0)
+                }
+            ),
             font:           Font {
                 font_face,
                 size:  Length::mm(4.0)
@@ -143,19 +156,19 @@ pub fn build() -> App {
                 stretch: Length::mm(3.0)
             },
             line_height: Length::mm(5.0),
-            hyphen,
+            indent:      Length::zero(),
+            hyphen: Some(hyphen),
             dictionary
         }
     );
 
     let target = default_target();
-    let state = State {
+    State {
         root: document.root(),
         storage: Cow::Owned(document.into_storage()),
         design: Cow::Owned(design),
         target: Cow::Owned(target),
-    };
-    App::from_state(state, SiteId(1))
+    }
 }
 
 pub fn default_target() -> Target {

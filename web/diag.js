@@ -3,6 +3,7 @@ let items = document.getElementById("items");
 for (let node of items.childNodes) {
     node.addEventListener("keydown", ws_log);
     node.addEventListener("input", ws_log);
+    node.addEventListener("beforeinput", ws_log);
     node.addEventListener("keypress", ws_log);
 }
 function wheel(e) {

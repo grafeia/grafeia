@@ -27,6 +27,9 @@ impl Length {
     pub fn zero() -> Length {
         Length { value: 0.0 }
     }
+    pub fn is_zero(self) -> bool {
+        self.value == 0.0
+    }
     pub fn max(self, other: Length) -> Length {
         Length { value: self.value.max(other.value) }
     }

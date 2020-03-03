@@ -41,8 +41,11 @@ enum Entry {
     Item(ItemMeasure, RenderItem, Tag),
     
     /// Continue on the next line (fill)
-    Linebreak(bool),
+    Linebreak(bool, Length),
     
+    /// Indent, Width
+    SetWidth(Length, Length),
+
     /// (measure, breaking)
     Space(FlexMeasure, bool),
 

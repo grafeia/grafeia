@@ -98,8 +98,8 @@ impl Writer {
     #[inline(always)]
     fn write_glue(&mut self, left: Glue) {
         match self.state | left {
-            Glue::Newline { fill: f } => {
-                self.stream.push(Entry::Linebreak(f));
+            Glue::Newline { fill, height } => {
+                self.stream.push(Entry::Linebreak(fill, height));
             },
             Glue::Space { breaking, measure }
              => self.stream.push(Entry::Space(measure, breaking)),
@@ -118,6 +118,9 @@ impl Writer {
     }
     pub fn space(&mut self, left: Glue, right: Glue, measure: FlexMeasure, breaking: bool) {
         self.push(left, right, Entry::Space(measure, breaking));
+    }
+    pub fn set_width(&mut self, indent: Length, width: Length) {
+        self.stream.push(Entry::SetWidth(indent, width));
     }
 
     #[inline(always)]

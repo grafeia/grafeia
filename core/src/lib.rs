@@ -1,10 +1,15 @@
 #![feature(generators, generator_trait, entry_insert)]
 
-#[macro_use] extern crate slotmap;
 use serde::{Serialize, Deserialize};
 
 #[macro_use] extern crate log;
 #[macro_use] extern crate lazy_static;
+
+macro_rules! data {
+    ($path:tt) => (
+        &*include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../data/", $path ))
+    )
+}
 
 pub mod content;
 pub mod layout;
@@ -15,7 +20,7 @@ pub mod draw;
 pub mod net;
 mod gen;
 mod text;
-mod object;
+pub mod object;
 mod document;
 
 pub use content::*;
@@ -28,13 +33,3 @@ pub use net::*;
 #[derive(Serialize, Deserialize)]
 #[derive(Debug, Copy, Clone)]
 pub struct Color;
-
-#[derive(Serialize, Deserialize)]
-#[derive(Debug, Copy, Clone)]
-pub enum Display {
-    Block,
-    Inline,
-
-    // Indent
-    Paragraph(units::Length)
-}

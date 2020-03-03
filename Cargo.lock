@@ -17,9 +17,9 @@ dependencies = [
 
 [[package]]
 name = "aho-corasick"
-version = "0.7.8"
+version = "0.7.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "743ad5a418686aad3b87fd14c43badd828cf26e214a00f92a384291cf22e1811"
+checksum = "d5e63fd144e18ba274ae7095c0197a870a7b9468abc801dd62f190d80817d2ec"
 dependencies = [
  "memchr",
 ]
@@ -244,9 +244,9 @@ dependencies = [
 
 [[package]]
 name = "bzip2-sys"
-version = "0.1.7"
+version = "0.1.8+1.0.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6584aa36f5ad4c9247f5323b0a42f37802b37a836f0ad87084d7a33961abe25f"
+checksum = "05305b41c5034ff0e93937ac64133d109b5a2660114ec45e9760bc6816d83038"
 dependencies = [
  "cc",
  "libc",
@@ -409,24 +409,26 @@ dependencies = [
 
 [[package]]
 name = "crossbeam-deque"
-version = "0.7.2"
+version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c3aa945d63861bfe624b55d153a39684da1e8c0bc8fba932f7ee3a3c16cea3ca"
+checksum = "9f02af974daeee82218205558e51ec8768b48cf524bd01d550abe5573a608285"
 dependencies = [
  "crossbeam-epoch",
  "crossbeam-utils",
+ "maybe-uninit",
 ]
 
 [[package]]
 name = "crossbeam-epoch"
-version = "0.8.0"
+version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5064ebdbf05ce3cb95e45c8b086f72263f4166b29b97f6baff7ef7fe047b55ac"
+checksum = "058ed274caafc1f60c4997b5fc07bf7dc7cca454af7c6e81edffe5f33f70dace"
 dependencies = [
- "autocfg 0.1.7",
+ "autocfg 1.0.0",
  "cfg-if",
  "crossbeam-utils",
  "lazy_static",
+ "maybe-uninit",
  "memoffset",
  "scopeguard",
 ]
@@ -443,11 +445,11 @@ dependencies = [
 
 [[package]]
 name = "crossbeam-utils"
-version = "0.7.0"
+version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ce446db02cdc3165b94ae73111e570793400d0794e46125cc4056c81cbb039f4"
+checksum = "c3c7c73a2d1e9fc0886a08b93e98eb643461230d5f1925e4036204d5f2e261a8"
 dependencies = [
- "autocfg 0.1.7",
+ "autocfg 1.0.0",
  "cfg-if",
  "lazy_static",
 ]
@@ -537,9 +539,9 @@ version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f997dcc19ba169df74f00f8aeae25589d2c9e4b2f7e4606541d87b3b0f6f6efc"
 dependencies = [
- "proc-macro2 1.0.8",
+ "proc-macro2 1.0.9",
  "quote 1.0.2",
- "syn 1.0.15",
+ "syn 1.0.16",
 ]
 
 [[package]]
@@ -623,7 +625,6 @@ checksum = "2fad85553e09a6f881f739c29f0b00b0f01357c743266d478b68951ce23285f3"
 [[package]]
 name = "font"
 version = "0.1.0"
-source = "git+https://github.com/pdf-rs/font#e5e81a216c84450f1b81e3dbc17417dbabf83f25"
 dependencies = [
  "brotli-decompressor",
  "decorum",
@@ -632,7 +633,7 @@ dependencies = [
  "inflate",
  "itertools",
  "log 0.4.8",
- "nom 5.1.0",
+ "nom 5.1.1",
  "pathfinder_content",
  "pathfinder_geometry",
  "rand 0.7.3",
@@ -752,9 +753,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9a5081aa3de1f7542a794a397cde100ed903b0630152d0973479018fd85423a7"
 dependencies = [
  "proc-macro-hack",
- "proc-macro2 1.0.8",
+ "proc-macro2 1.0.9",
  "quote 1.0.2",
- "syn 1.0.15",
+ "syn 1.0.16",
 ]
 
 [[package]]
@@ -882,7 +883,7 @@ dependencies = [
  "parking_lot",
  "wayland-client",
  "winapi 0.3.8",
- "winit 0.21.0",
+ "winit",
 ]
 
 [[package]]
@@ -937,7 +938,6 @@ dependencies = [
  "base64",
  "bincode",
  "cfg-if",
- "docx",
  "font",
  "futures",
  "grafeia_core",
@@ -949,7 +949,6 @@ dependencies = [
  "pathfinder_gpu",
  "pathfinder_renderer",
  "pathfinder_view",
- "pulldown-cmark",
  "serde",
  "serde_json",
  "unicode-segmentation",
@@ -957,7 +956,21 @@ dependencies = [
  "vector",
  "wasm-bindgen",
  "web-sys",
- "winit 0.20.0",
+]
+
+[[package]]
+name = "grafeia_convert"
+version = "0.1.0"
+dependencies = [
+ "docx",
+ "env_logger",
+ "grafeia_core",
+ "log 0.4.8",
+ "pathfinder_color",
+ "pathfinder_content",
+ "pathfinder_geometry",
+ "pathfinder_renderer",
+ "pulldown-cmark",
 ]
 
 [[package]]
@@ -979,7 +992,6 @@ dependencies = [
  "pathfinder_svg",
  "rex",
  "serde",
- "slotmap",
  "unicode-segmentation",
  "unicode_categories",
  "usvg",
@@ -992,6 +1004,8 @@ version = "0.1.0"
 dependencies = [
  "env_logger",
  "grafeia_app",
+ "grafeia_core",
+ "log 0.4.8",
  "pathfinder_view",
 ]
 
@@ -1015,6 +1029,7 @@ dependencies = [
  "console_error_panic_hook",
  "console_log",
  "grafeia_app",
+ "grafeia_core",
  "js-sys",
  "log 0.4.8",
  "pathfinder_view",
@@ -1094,9 +1109,9 @@ dependencies = [
 
 [[package]]
 name = "hermit-abi"
-version = "0.1.7"
+version = "0.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e2c55f143919fbc0bc77e427fe2d74cf23786d7c1875666f2fde3ac3c659bb67"
+checksum = "1010591b26bbfe835e9faeabeb11866061cc7dcebffd56ad7d0942d0e61aefd8"
 dependencies = [
  "libc",
 ]
@@ -1175,8 +1190,6 @@ dependencies = [
 [[package]]
 name = "hyphenation"
 version = "0.7.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0493c6fb308d367d0aed7acd341adbc1c2f216c135073e4b73b652c5d0d6b54c"
 dependencies = [
  "atlatl",
  "bincode",
@@ -1187,8 +1200,6 @@ dependencies = [
 [[package]]
 name = "hyphenation_commons"
 version = "0.7.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9e3461ab51107f7beb8e0c46606d6eb7dfa48880014a29c170afad3ce6b25add"
 dependencies = [
  "atlatl",
  "serde",
@@ -1278,9 +1289,6 @@ name = "instant"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6c346c299e3fe8ef94dc10c2c0253d858a69aac1245157a3bf4125915d528caf"
-dependencies = [
- "web-sys",
-]
 
 [[package]]
 name = "iovec"
@@ -1360,9 +1368,9 @@ checksum = "b294d6fa9ee409a054354afc4352b0b9ef7ca222c69b8812cbea9e7d2bf3783f"
 
 [[package]]
 name = "lexical-core"
-version = "0.4.6"
+version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2304bccb228c4b020f3a4835d247df0a02a7c4686098d4167762cfbbe4c5cb14"
+checksum = "d7043aa5c05dd34fb73b47acb8c3708eac428de4545ea3682ed2f11293ebd890"
 dependencies = [
  "arrayvec 0.4.12",
  "cfg-if",
@@ -1503,9 +1511,9 @@ checksum = "2a60c7ce501c71e03a9c9c0d35b861413ae925bd979cc7a4e30d060069aaac8d"
 
 [[package]]
 name = "mime_guess"
-version = "1.8.7"
+version = "1.8.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d977de9ee851a0b16e932979515c0f3da82403183879811bc97d50bd9cc50f7"
+checksum = "216929a5ee4dd316b1702eedf5e74548c123d370f47841ceaac38ca154690ca3"
 dependencies = [
  "mime 0.2.6",
  "phf",
@@ -1515,9 +1523,9 @@ dependencies = [
 
 [[package]]
 name = "mime_guess"
-version = "2.0.1"
+version = "2.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1a0ed03949aef72dbdf3116a383d7b38b4768e6f960528cd6a6044aa9ed68599"
+checksum = "2684d4c2e97d99848d30b324b00c8fcc7e5c897b7cbb5819b09e7c90e8baf212"
 dependencies = [
  "mime 0.3.16",
  "unicase 2.6.0",
@@ -1585,7 +1593,7 @@ dependencies = [
  "httparse",
  "log 0.4.8",
  "mime 0.2.6",
- "mime_guess 1.8.7",
+ "mime_guess 1.8.8",
  "quick-error",
  "rand 0.6.5",
  "safemem",
@@ -1635,13 +1643,13 @@ dependencies = [
 
 [[package]]
 name = "nom"
-version = "5.1.0"
+version = "5.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c433f4d505fe6ce7ff78523d2fa13a0b9f2690e181fc26168bcbe5ccc5d14e07"
+checksum = "0b471253da97532da4b61552249c521e01e736071f71c1a4f7ebbfbf0a06aad6"
 dependencies = [
  "lexical-core",
  "memchr",
- "version_check 0.1.5",
+ "version_check 0.9.1",
 ]
 
 [[package]]
@@ -1764,7 +1772,6 @@ dependencies = [
 [[package]]
 name = "pathfinder_color"
 version = "0.1.0"
-source = "git+https://github.com/s3bk/pathfinder/#0183e70bc04d3094b0ecefb176b74a8805a77003"
 dependencies = [
  "pathfinder_simd",
 ]
@@ -1772,7 +1779,6 @@ dependencies = [
 [[package]]
 name = "pathfinder_content"
 version = "0.1.0"
-source = "git+https://github.com/s3bk/pathfinder/#0183e70bc04d3094b0ecefb176b74a8805a77003"
 dependencies = [
  "arrayvec 0.5.1",
  "bitflags",
@@ -1787,7 +1793,7 @@ dependencies = [
 [[package]]
 name = "pathfinder_export"
 version = "0.1.0"
-source = "git+https://github.com/s3bk/pathfinder/#0183e70bc04d3094b0ecefb176b74a8805a77003"
+source = "git+https://github.com/s3bk/pathfinder/#53e56caf15e25e97f0f13b89f841fc5df29981fb"
 dependencies = [
  "deflate 0.8.3",
  "pathfinder_color",
@@ -1799,7 +1805,6 @@ dependencies = [
 [[package]]
 name = "pathfinder_geometry"
 version = "0.4.0"
-source = "git+https://github.com/s3bk/pathfinder/#0183e70bc04d3094b0ecefb176b74a8805a77003"
 dependencies = [
  "log 0.4.8",
  "pathfinder_simd",
@@ -1808,32 +1813,32 @@ dependencies = [
 [[package]]
 name = "pathfinder_gl"
 version = "0.1.0"
-source = "git+https://github.com/s3bk/pathfinder/#0183e70bc04d3094b0ecefb176b74a8805a77003"
 dependencies = [
  "gl",
  "half",
  "log 0.4.8",
  "pathfinder_geometry",
  "pathfinder_gpu",
+ "pathfinder_resources",
  "pathfinder_simd",
 ]
 
 [[package]]
 name = "pathfinder_gpu"
 version = "0.1.0"
-source = "git+https://github.com/s3bk/pathfinder/#0183e70bc04d3094b0ecefb176b74a8805a77003"
 dependencies = [
+ "bitflags",
  "half",
  "image 0.22.5",
  "pathfinder_color",
  "pathfinder_geometry",
+ "pathfinder_resources",
  "pathfinder_simd",
 ]
 
 [[package]]
 name = "pathfinder_renderer"
 version = "0.1.0"
-source = "git+https://github.com/s3bk/pathfinder/#0183e70bc04d3094b0ecefb176b74a8805a77003"
 dependencies = [
  "bitflags",
  "byteorder",
@@ -1843,29 +1848,23 @@ dependencies = [
  "pathfinder_content",
  "pathfinder_geometry",
  "pathfinder_gpu",
+ "pathfinder_resources",
  "pathfinder_simd",
  "pathfinder_ui",
  "rayon",
  "serde",
  "serde_json",
  "smallvec",
+ "vec_map",
 ]
 
 [[package]]
 name = "pathfinder_resources"
 version = "0.1.0"
-source = "git+https://github.com/s3bk/pathfinder/#0183e70bc04d3094b0ecefb176b74a8805a77003"
-dependencies = [
- "half",
- "pathfinder_gpu",
- "phf",
- "phf_codegen",
-]
 
 [[package]]
 name = "pathfinder_simd"
 version = "0.4.0"
-source = "git+https://github.com/s3bk/pathfinder/#0183e70bc04d3094b0ecefb176b74a8805a77003"
 dependencies = [
  "rustc_version",
 ]
@@ -1873,7 +1872,6 @@ dependencies = [
 [[package]]
 name = "pathfinder_svg"
 version = "0.1.0"
-source = "git+https://github.com/s3bk/pathfinder/#0183e70bc04d3094b0ecefb176b74a8805a77003"
 dependencies = [
  "bitflags",
  "hashbrown",
@@ -1887,12 +1885,12 @@ dependencies = [
 [[package]]
 name = "pathfinder_ui"
 version = "0.1.0"
-source = "git+https://github.com/s3bk/pathfinder/#0183e70bc04d3094b0ecefb176b74a8805a77003"
 dependencies = [
  "hashbrown",
  "pathfinder_color",
  "pathfinder_geometry",
  "pathfinder_gpu",
+ "pathfinder_resources",
  "pathfinder_simd",
  "serde",
  "serde_derive",
@@ -1902,14 +1900,13 @@ dependencies = [
 [[package]]
 name = "pathfinder_view"
 version = "0.1.0"
-source = "git+https://github.com/s3bk/pathfinder_view#c5e0d93721d5d1c714f7c3333a189af4b67d3bb2"
 dependencies = [
  "bincode",
  "cfg-if",
  "gl",
  "glutin",
  "js-sys",
- "log 0.3.9",
+ "log 0.4.8",
  "pathfinder_color",
  "pathfinder_export",
  "pathfinder_geometry",
@@ -1920,19 +1917,19 @@ dependencies = [
  "serde",
  "wasm-bindgen",
  "web-sys",
- "winit 0.21.0",
+ "winit",
 ]
 
 [[package]]
 name = "pathfinder_webgl"
 version = "0.1.0"
-source = "git+https://github.com/s3bk/pathfinder/#0183e70bc04d3094b0ecefb176b74a8805a77003"
 dependencies = [
  "image 0.21.3",
  "log 0.4.8",
  "pathfinder_geometry",
  "pathfinder_gpu",
  "pathfinder_renderer",
+ "pathfinder_resources",
  "pathfinder_simd",
  "wasm-bindgen",
  "web-sys",
@@ -1998,9 +1995,9 @@ version = "0.4.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "385322a45f2ecf3410c68d2a549a4a2685e8051d0f278e39743ff4e451cb9b3f"
 dependencies = [
- "proc-macro2 1.0.8",
+ "proc-macro2 1.0.9",
  "quote 1.0.2",
- "syn 1.0.15",
+ "syn 1.0.16",
 ]
 
 [[package]]
@@ -2063,9 +2060,9 @@ version = "0.5.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ecd45702f76d6d3c75a80564378ae228a85f0b59d2f3ed43c91b4a69eb2ebfc5"
 dependencies = [
- "proc-macro2 1.0.8",
+ "proc-macro2 1.0.9",
  "quote 1.0.2",
- "syn 1.0.15",
+ "syn 1.0.16",
 ]
 
 [[package]]
@@ -2085,9 +2082,9 @@ dependencies = [
 
 [[package]]
 name = "proc-macro2"
-version = "1.0.8"
+version = "1.0.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3acb317c6ff86a4e579dfa00fc5e6cca91ecbb4e7eb2df0468805b674eb88548"
+checksum = "6c09721c6781493a2a492a96b5a5bf19b65917fe6728884e7c44dd0c60ca3435"
 dependencies = [
  "unicode-xid 0.2.0",
 ]
@@ -2131,7 +2128,7 @@ version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "053a8c8bcc71fcce321828dc897a98ab9760bef03a4fc36693c231e5b3216cfe"
 dependencies = [
- "proc-macro2 1.0.8",
+ "proc-macro2 1.0.9",
 ]
 
 [[package]]
@@ -2283,9 +2280,9 @@ dependencies = [
 
 [[package]]
 name = "raqote"
-version = "0.7.12"
+version = "0.7.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0b5c9e1c8b3f66942f8b5f97eae7f6fef3be73a0e085c8fd28ee85ebf798fa38"
+checksum = "aefbfa0f29b39bd2465f78475225ec2471accaf45a64a0391b4bfcdd5f0f7a00"
 dependencies = [
  "euclid",
  "lyon_geom",
@@ -2362,9 +2359,9 @@ dependencies = [
 
 [[package]]
 name = "regex-syntax"
-version = "0.6.14"
+version = "0.6.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b28dfe3fe9badec5dbf0a79a9cccad2cfc2ab5484bdb3e44cbd1ae8b3ba2be06"
+checksum = "7246cd0a0a6ec2239a5405b2b16e3f404fa0dcc6d28f5f5b877bf80e33e0f294"
 
 [[package]]
 name = "remove_dir_all"
@@ -2490,9 +2487,9 @@ version = "1.0.104"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "128f9e303a5a29922045a830221b8f78ec74a5f544944f3d5984f8ec3895ef64"
 dependencies = [
- "proc-macro2 1.0.8",
+ "proc-macro2 1.0.9",
  "quote 1.0.2",
- "syn 1.0.15",
+ "syn 1.0.16",
 ]
 
 [[package]]
@@ -2566,9 +2563,6 @@ name = "slotmap"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c46a3482db8f247956e464d783693ece164ca056e6e67563ee5505bdb86452cd"
-dependencies = [
- "serde",
-]
 
 [[package]]
 name = "smallvec"
@@ -2655,9 +2649,9 @@ dependencies = [
 
 [[package]]
 name = "sw-composite"
-version = "0.7.5"
+version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0e3b3ef31a0dc68672c8d2ddcc84f6775db748c6ceef3d3dac2ac6fe2a52c494"
+checksum = "489500b88acdc4007684adf921506e84057e232a7f8b76a0caa288169ab39b94"
 
 [[package]]
 name = "syn"
@@ -2672,11 +2666,11 @@ dependencies = [
 
 [[package]]
 name = "syn"
-version = "1.0.15"
+version = "1.0.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a0294dc449adc58bb6592fff1a23d3e5e6e235afc6a0ffca2657d19e7bbffe5"
+checksum = "123bd9499cfb380418d509322d7a6d52e5315f064fe4b3ad18a53d6b92c07859"
 dependencies = [
- "proc-macro2 1.0.8",
+ "proc-macro2 1.0.9",
  "quote 1.0.2",
  "unicode-xid 0.2.0",
 ]
@@ -2735,9 +2729,9 @@ dependencies = [
 
 [[package]]
 name = "tokio"
-version = "0.2.11"
+version = "0.2.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8fdd17989496f49cdc57978c96f0c9fe5e4a58a8bddc6813c449a4624f6a030b"
+checksum = "0fa5e81d6bc4e67fe889d5783bd2a128ab2e0cfa487e0be16b6a8d177b101616"
 dependencies = [
  "bytes 0.5.4",
  "fnv",
@@ -2753,13 +2747,13 @@ dependencies = [
 
 [[package]]
 name = "tokio-macros"
-version = "0.2.4"
+version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f4b1e7ed7d5d4c2af3d999904b0eebe76544897cdbfb2b9684bed2174ab20f7c"
+checksum = "f0c3acc6aa564495a0f2e1d59fab677cd7f81a19994cfc7f3ad0e64301560389"
 dependencies = [
- "proc-macro2 1.0.8",
+ "proc-macro2 1.0.9",
  "quote 1.0.2",
- "syn 1.0.15",
+ "syn 1.0.16",
 ]
 
 [[package]]
@@ -2952,9 +2946,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "05e42f7c18b8f902290b009cde6d651262f956c98bc51bca4cd1d511c9cd85c7"
 
 [[package]]
+name = "vec_map"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "05c78687fb1a80548ae3250346c3db86a80a7cdd77bda190189f2d0a0987c81a"
+
+[[package]]
 name = "vector"
 version = "0.1.0"
-source = "git+https://github.com/s3bk/vector/#bd361fee74f709172665bf2b0871c0e88cf0a1c5"
 dependencies = [
  "itertools",
  "log 0.4.8",
@@ -3016,7 +3015,7 @@ dependencies = [
  "hyper",
  "log 0.4.8",
  "mime 0.3.16",
- "mime_guess 2.0.1",
+ "mime_guess 2.0.3",
  "multipart",
  "pin-project",
  "scoped-tls",
@@ -3054,9 +3053,9 @@ dependencies = [
  "bumpalo",
  "lazy_static",
  "log 0.4.8",
- "proc-macro2 1.0.8",
+ "proc-macro2 1.0.9",
  "quote 1.0.2",
- "syn 1.0.15",
+ "syn 1.0.16",
  "wasm-bindgen-shared",
 ]
 
@@ -3076,9 +3075,9 @@ version = "0.2.58"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e85031354f25eaebe78bb7db1c3d86140312a911a106b2e29f9cc440ce3e7668"
 dependencies = [
- "proc-macro2 1.0.8",
+ "proc-macro2 1.0.9",
  "quote 1.0.2",
- "syn 1.0.15",
+ "syn 1.0.16",
  "wasm-bindgen-backend",
  "wasm-bindgen-shared",
 ]
@@ -3098,9 +3097,9 @@ dependencies = [
  "anyhow",
  "heck",
  "log 0.4.8",
- "proc-macro2 1.0.8",
+ "proc-macro2 1.0.9",
  "quote 1.0.2",
- "syn 1.0.15",
+ "syn 1.0.16",
  "wasm-bindgen-backend",
  "weedle",
 ]
@@ -3232,36 +3231,6 @@ checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
 
 [[package]]
 name = "winit"
-version = "0.20.0"
-source = "git+https://github.com/s3bk/winit#41346348a0c38163f4c5dbab547aecfd2b5509d9"
-dependencies = [
- "android_glue",
- "bitflags",
- "cocoa",
- "core-foundation",
- "core-graphics",
- "core-video-sys",
- "dispatch",
- "instant",
- "lazy_static",
- "libc",
- "log 0.4.8",
- "mio",
- "mio-extras",
- "objc",
- "parking_lot",
- "percent-encoding",
- "raw-window-handle",
- "smithay-client-toolkit",
- "wasm-bindgen",
- "wayland-client",
- "web-sys",
- "winapi 0.3.8",
- "x11-dl",
-]
-
-[[package]]
-name = "winit"
 version = "0.21.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "65a5c1a5ef76ac31cc97ad29489acdbed2178f3fc12ca00ee6cb11d60adb5a3a"
@@ -3343,9 +3312,9 @@ checksum = "ec7a2a501ed189703dba8b08142f057e887dfc4b2cc4db2d343ac6376ba3e0b9"
 
 [[package]]
 name = "zip"
-version = "0.5.4"
+version = "0.5.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e41ff37ba788e2169b19fa70253b70cb53d9f2db9fb9aea9bcfc5047e02c3bae"
+checksum = "6df134e83b8f0f8153a094c7b0fd79dfebe437f1d76e7715afa18ed95ebe2fd7"
 dependencies = [
  "bzip2",
  "crc32fast",

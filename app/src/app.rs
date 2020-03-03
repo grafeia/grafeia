@@ -9,10 +9,9 @@ use pathfinder_geometry::{
     rect::RectF
 };
 use pathfinder_view::{Interactive, Context, ElementState, KeyEvent, KeyCode, Modifiers};
-use vector::{PathBuilder, PathStyle, Surface, FillRule};
+use vector::{PathBuilder, PathStyle, Surface, FillRule, Paint};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_categories::UnicodeCategories;
-use crate::build;
 use std::borrow::Cow;
 
 #[cfg(target_arch = "wasm32")]
@@ -45,7 +44,26 @@ fn load_data(key: &str) -> Option<Vec<u8>> {
     base64::decode(&encoded).ok()
 }
 
-const VERSION: (u16, u16) = (0, 5);
+#[cfg(not(target_arch="wasm32"))]
+fn time<T>(msg: &str, f: impl FnOnce() -> T) -> T {
+    use std::time::Instant;
+    let start = Instant::now();
+    let r = f();
+    let elapsed = start.elapsed();
+    info!("{}: {}ms", msg, 1000. * elapsed.as_secs_f64());
+    r
+}
+#[cfg(target_arch="wasm32")]
+fn time<T>(msg: &str, f: impl FnOnce() -> T) -> T {
+    use web_sys::window;
+    let performance = window().unwrap().performance().unwrap();
+
+    let start = performance.now();
+    let r = f();
+    let end = performance.now();
+    info!("{}: {}ms", msg, end - start);
+    r
+}
 
 pub struct App {
     target: Target,
@@ -58,9 +76,6 @@ pub struct App {
     columns: Option<Columns>,
 }
 impl App {
-    pub fn build() -> Self {
-        build::build()
-    }
     pub fn from_state(state: State, site: SiteId) -> Self {
         let storage = state.storage.into_owned();
         let target = state.target.into_owned();
@@ -79,40 +94,8 @@ impl App {
             target,
             design
         };
-        app.render();
+        app.layout();
         app
-    }
-
-    #[cfg(feature="import_markdown")]
-    pub fn import_markdown(file: &str) -> Self {
-        let storage = Storage::new();
-        let mut document = Document::new(storage);
-        build::symbols(&mut document);
-
-        let data = std::fs::read(file).unwrap();
-        let text = String::from_utf8(data).unwrap();
-
-        use crate::import::markdown;
-        markdown::define_types(&mut document);
-        let design = markdown::markdown_design(&mut document);
-        let root = markdown::import_markdown(&mut document, &text);
-        document.set_root(root);
-
-        let storage = document.into_storage();
-        let target = build::default_target();
-
-        let state = State {
-            storage: Cow::Owned(storage),
-            target: Cow::Owned(target),
-            design: Cow::Owned(design),
-            root
-        };
-        App::from_state(state, SiteId(1))
-    }
-
-    #[cfg(feature="export_docx")]
-    pub fn export_docx(&self) -> Vec<u8> {
-        crate::export::docx::export_docx(&self.document, &self.design)
     }
 
     pub fn store(&self) {
@@ -122,35 +105,15 @@ impl App {
             storage: Cow::Borrowed(self.document.storage()),
             root: self.document.root()
         };
-        store_data("app", &bincode::serialize(&(VERSION, state)).unwrap())
+        state.store(std::fs::File::create("document.graf").unwrap()).unwrap();
     }
-    pub fn load_from(data: &[u8]) -> Option<Self> {
-        info!("got {} bytes", data.len());
-        let version: (u16, u16) = bincode::deserialize(data).ok()?;
-        if version != VERSION {
-            warn!("Ignoring data from an older version {}.{}. This is {}.{}.", version.0, version.1, VERSION.0, VERSION.1);
-            return None;
-        }
-        let data = &data[bincode::serialized_size(&VERSION).unwrap() as usize ..];
-        let state: State = bincode::deserialize(data).ok()?;
-        info!("data decoded");
-
-        Some(App::from_state(state, SiteId(1)))
-    }
-    pub fn load() -> Option<Self> {
-        let data = load_data("app")?;
-        Self::load_from(&data)
-    }
-    fn clean(&mut self) {
-    }
-    fn render(&mut self) {
-        let columns = self.cache.layout(self.document.storage(), &self.design, &self.target, self.document.root());
+    fn layout(&mut self) {
+        let columns = time("layout", || self.cache.layout(self.document.storage(), &self.design, &self.target, self.document.root()));
         let num_pages = columns.len();
+        info!("{} pages", num_pages);
 
         self.pages = std::iter::from_fn(|| Some(None)).take(num_pages).collect();
         self.columns = Some(columns);
-
-        self.render_page(0);
     }
     fn render_page(&mut self, page_nr: usize) {
         let columns = self.columns.as_ref().unwrap();
@@ -428,7 +391,7 @@ impl App {
 
     fn op(&mut self, op: DocumentOp) {
         self.document.exec_op(op);
-        self.render();
+        self.layout();
     }
 
 }
@@ -471,29 +434,32 @@ impl Interactive for App {
         self.pages.len()
     }
     fn scene(&mut self, page_nr: usize) -> Scene {
+        if self.pages[page_nr].is_none() {
+            self.render_page(page_nr);
+        }
         let mut scene = self.pages[page_nr].as_ref().unwrap().scene().clone();
         if let Some(ref cursor) = self.cursor {
             let weave = self.document.get_weave(cursor.tag.seq());
             let type_design = self.design.get_type_or_default(weave.typ());
             let style = scene.build_style(PathStyle {
                 fill: None,
-                stroke: Some(((0,0,200,255), 0.1 * type_design.font.size.value)),
+                stroke: Some((Paint::Solid((0,0,200,255)), 0.1 * type_design.font.size.value)),
                 fill_rule: FillRule::NonZero
             });
             let mut pb = PathBuilder::new();
             pb.move_to(cursor.page_pos);
             pb.line_to(cursor.page_pos - Vector2F::new(0.0, type_design.font.size.value));
             
-            scene.draw_path(pb.into_outline(), &style);
+            scene.draw_path(pb.into_outline(), &style, None);
 
             let mark_style = scene.build_style(PathStyle {
                 fill: None,
-                stroke: Some(((100,0,200,255), 0.05 * type_design.font.size.value)),
+                stroke: Some((Paint::Solid((100,0,200,255)), 0.05 * type_design.font.size.value)),
                 fill_rule: FillRule::NonZero
             });
             let underline_style = scene.build_style(PathStyle {
                 fill: None,
-                stroke: Some(((0,200,0,255), 0.2)),
+                stroke: Some((Paint::Solid((0,200,0,255)), 0.2)),
                 fill_rule: FillRule::NonZero
             });
 
@@ -503,14 +469,14 @@ impl Interactive for App {
                 let mut pb = PathBuilder::new();
                 pb.move_to(p);
                 pb.cubic_curve_to(p + dx, q + dx, q);
-                scene.draw_path(pb.into_outline(), &mark_style);
+                scene.draw_path(pb.into_outline(), &mark_style, None);
             };
             let mark_word = |scene: &mut Scene, tag: Tag| {
                 if let Some(rect) = self.page_position(0, tag) {
                     let mut pb = PathBuilder::new();
                     pb.move_to(rect.lower_left());
                     pb.line_to(rect.lower_right());
-                    scene.draw_path(pb.into_outline(), &underline_style);
+                    scene.draw_path(pb.into_outline(), &underline_style, None);
                 }
             };
             let word_space = type_design.word_space.length.value;
@@ -538,14 +504,14 @@ impl Interactive for App {
                 Some(Item::Object(_)) => {
                     let outline_style = scene.build_style(PathStyle {
                         fill: None,
-                        stroke: Some(((200,0,0,255), 0.2)),
+                        stroke: Some((Paint::Solid((200,0,0,255)), 0.2)),
                         fill_rule: FillRule::NonZero
                     });
         
                     if let Some(rect) = dbg!(self.page_position(0, cursor.tag)) {
                         let mut pb = PathBuilder::new();
                         pb.rect(rect);
-                        scene.draw_path(pb.into_outline(), &outline_style);
+                        scene.draw_path(pb.into_outline(), &outline_style, None);
                     }
                 }
                 _ => {}
@@ -592,10 +558,12 @@ impl Interactive for App {
             (KeyCode::Delete, false) => (true, self.text_op(TextOp::DeleteNextGrapheme)),
             (KeyCode::Delete, true) => (true, self.text_op(TextOp::DeleteNextItem)),
             (KeyCode::Return, false) => (true, self.text_op(TextOp::NewSequence)),
-            _ => (false, None)
+            (KeyCode::PageUp, false) => return ctx.prev_page(),
+            (KeyCode::PageDown, false) => return ctx.next_page(),
+            _ => return
         };
         if update & s.is_some() {
-            self.render();
+            self.layout();
         }
         if let Some((tag, pos)) = s {
             info!("new tag: {:?}", tag);
@@ -612,13 +580,12 @@ impl Interactive for App {
             _ => None
         };
         if let Some((tag, pos)) = s {
-            self.render();
+            self.layout();
             self.set_cursor_to(tag, pos);
             ctx.update_scene();
         }
     }
     fn exit(&mut self, ctx: &mut Context) {
-        self.clean();
         self.store()
     }
 }
@@ -673,14 +640,14 @@ impl Interactive for NetworkApp {
                 let mut scene = Scene::new();
                 let style = scene.build_style(PathStyle {
                     fill: None,
-                    stroke: Some(((0,0,200,255), 10.)),
+                    stroke: Some((Paint::Solid((0,0,200,255)), 10.)),
                     fill_rule: FillRule::NonZero
                 });
                 let mut pb = PathBuilder::new();
                 pb.move_to(Vector2F::new(0.0, 100.0));
                 pb.line_to(Vector2F::new(0.0, 0.0));
                 pb.line_to(Vector2F::new(50.0, 0.0));
-                scene.draw_path(pb.into_outline(), &style);
+                scene.draw_path(pb.into_outline(), &style, None);
                 scene
             }
         }

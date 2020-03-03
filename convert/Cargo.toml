@@ -1,0 +1,16 @@
+[package]
+name = "grafeia_convert"
+version = "0.1.0"
+authors = ["Sebastian K <s3bk@protonmail.com>"]
+edition = "2018"
+
+[dependencies]
+grafeia_core = { path = "../core" }
+log = "*"
+docx = "*"
+pulldown-cmark = "*"
+pathfinder_geometry = { git = "https://github.com/s3bk/pathfinder/" }
+pathfinder_content = { git = "https://github.com/s3bk/pathfinder/" }
+pathfinder_color = { git = "https://github.com/s3bk/pathfinder/" }
+pathfinder_renderer = { git = "https://github.com/s3bk/pathfinder/" }
+env_logger = "*"

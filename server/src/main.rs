@@ -111,13 +111,10 @@ async fn client_connected(ws: WebSocket, server: Arc<Mutex<Server>>) {
     }).await;
 }
 
-type Version = (u16, u16);
-
 fn load() -> State<'static> {
     let path = std::env::args().nth(1).expect("no file given");
-    let data = std::fs::read(path).expect("can't open file");
-    let (version, state): (Version, State) = bincode::deserialize(&data).expect("failed to decode");
-    state
+    let file = std::fs::File::open(path).expect("can't open file");
+    State::load(file).unwrap()
 }
 
 #[tokio::main]

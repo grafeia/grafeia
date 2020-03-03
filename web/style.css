@@ -5,11 +5,30 @@ body {
     margin: 0;
     overflow: hidden;
 }
+
+body > div {
+    height: 100vh;
+    overflow-y: scroll;
+    overflow-x: hidden;
+} 
+body > div#left {
+    width: max-content;
+    flex-basis: content;
+}
+body > div#right {
+    flex-grow: 1;
+    flex-basis: 20em;
+    background-color: lavender;
+}
+body > div > div {
+    overflow-y: scroll;
+    overflow-x: hidden;
+}
 #view-area {
     position: relative;
     margin: auto;
-    overflow-y: scroll;
-    overflow-x: hidden;
+    overflow-x: scroll;
+    overflow-y: hidden;
 }
 #canvas {
     margin: 0;
@@ -26,11 +45,7 @@ body {
     cursor: pointer;
 }
 div#log {
-    background-color: lavender;
     padding: 0.8em;
-    overflow: scroll;
-    flex-grow: 1;
-    flex-basis: 20em;
 }
 #log p {
     margin: 0.2em 0;

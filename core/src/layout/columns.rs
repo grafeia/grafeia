@@ -12,6 +12,8 @@ struct LineBreak {
     factor: f32,
     score:  f32,
     height: Length,
+    width:  Length,
+    indent: Length,
 }
 
 #[derive(Copy, Clone, Debug, Default)]
@@ -36,7 +38,6 @@ pub struct ParagraphStyle {
 pub struct ParagraphLayout {
     items:      Vec<Entry>,
     nodes:      Vec<Option<LineBreak>>,
-    width:      Length,
     last:       usize
 }
 pub struct ColumnLayout {
@@ -59,6 +60,8 @@ struct Context {
     measure:    FlexMeasure,
     overflow:   FlexMeasure, // how much to overflow into the margin
     height:     Length,
+    indent:     Length,
+    width:      Length,
     path:       u64,    // one bit for each branch on this line
     begin:      usize,  // begin of line or branch
     pos:        usize,  // calculation starts here
@@ -66,11 +69,13 @@ struct Context {
     branches:   u8,     // number of branches so far (<= 64)
 }
 impl Context {
-    fn new(start: usize, score: f32) -> Context {
+    fn new(start: usize, score: f32, indent: Length, width: Length) -> Context {
         Context {
             measure:    FlexMeasure::zero(),
             overflow:   FlexMeasure::zero(),
             height:     Length::zero(),
+            indent,
+            width,
             path:       0,
             begin:      start,
             pos:        start,
@@ -105,12 +110,14 @@ impl ParagraphLayout {
     pub fn new(items: StreamVec, width: Length) -> ParagraphLayout {
         let limit = items.0.len();
         let mut nodes = vec![None; limit+1];
-        nodes[0] = Some(LineBreak::default());
+        nodes[0] = Some(LineBreak {
+            width,
+            .. LineBreak::default()
+        });
 
         let mut layout = ParagraphLayout {
             nodes,
             items: items.0,
-            width,
             last: 0
         };
         layout.run();
@@ -123,7 +130,7 @@ impl ParagraphLayout {
                 Some(b) => {
                     last = self.complete_line(
                         start,
-                        Context::new(start, b.score)
+                        Context::new(start, b.score, b.indent, b.width)
                     );
                 },
                 None => {}
@@ -161,15 +168,22 @@ impl ParagraphLayout {
                     // add width now.
                     c.add_space(s);
                 }
-                Entry::Linebreak(fill) => {
+
+                Entry::Linebreak(fill, _) => {
                     if fill {
-                        c.fill(self.width);
+                        c.fill(c.width);
                     }
                     
                     self.maybe_update(&c, n+1);
                     last = n+1;
                     break;
                 },
+
+                Entry::SetWidth(indent, width) => {
+                    c.indent = indent;
+                    c.width = width;
+                }
+
                 Entry::BranchEntry(len) => {
                     // b
                     let b_last = self.complete_line(
@@ -194,7 +208,7 @@ impl ParagraphLayout {
                 }
             }
             
-            if c.measure.shrink > self.width {
+            if c.measure.shrink > c.width {
                 break; // too full
             }
             
@@ -205,18 +219,20 @@ impl ParagraphLayout {
     }
 
     fn maybe_update(&mut self, c: &Context, n: usize) {
-        let (factor, score) = match c.line().factor(self.width) {
+        let (factor, score) = match c.line().factor(c.width) {
             Some(factor) => (factor, -factor * factor),
             None => (1.0, -1000.)
         };
 
         let break_score = c.score + score;
         let break_point = LineBreak {
-            prev:   c.begin,
-            path:   c.path,
             factor: factor,
             score:  break_score,
-            height: c.height
+            prev:   c.begin,
+            path:   c.path,
+            height: c.height,
+            width:  c.width,
+            indent: c.indent,
         };
         self.nodes[n] = Some(match self.nodes[n] {
             Some(line) if break_score <= line.score => line,
@@ -232,14 +248,17 @@ impl ColumnLayout {
         let limit = items.0.len();
         let mut nodes = vec![None; limit+1];
         let mut nodes_col = vec![None; limit+1];
-        nodes[0] = Some(LineBreak::default());
+
+        nodes[0] = Some(LineBreak {
+            width,
+            .. LineBreak::default()
+        });
         nodes_col[0] = Some(ColumnBreak::default());
 
         let mut layout = ColumnLayout {
             para: ParagraphLayout {
                 nodes,
                 items: items.0,
-                width,
                 last: 0
             },
             nodes_col,
@@ -258,7 +277,7 @@ impl ColumnLayout {
                 Some(b) => {
                     last = self.para.complete_line(
                         start,
-                        Context::new(start, b.score)
+                        Context::new(start, b.score, b.indent, b.width)
                     );
                     self.compute_column(start, false);
                 },
@@ -284,8 +303,8 @@ impl ColumnLayout {
 
     fn num_lines_penalty(&self, n: usize) -> f32 {
         match n {
-            1 => -20.0,
-            2 => -2.0,
+            1 => -500.0,
+            2 => -100.0,
             _ => 0.0
         }
     }
@@ -302,14 +321,16 @@ impl ColumnLayout {
         let mut last = n;
         let mut found = false;
         
+        // walk backwards
         loop {
             let last_node = self.para.nodes[last].unwrap();
-                        
+            
             if last > 0 {
                 match self.para.items[last-1] {
-                    Entry::Linebreak(_) => {
+                    Entry::Linebreak(_, skip) => {
                         is_last_paragraph = false;
                         num_lines_before_end = 0;
+                        height += skip;
                     },
                     Entry::Space { .. } => {
                         num_lines_before_end += 1;
@@ -428,8 +449,13 @@ impl<'a> Iterator for Column<'a> {
         self.lines.pop().map(|last| {
             let b = self.layout.nodes[last].unwrap();
             self.y += b.height;
+            let y = self.y;
+
+            if let Entry::Linebreak(_, skip) = self.layout.items[last-1] {
+                self.y += skip;
+            }
             
-            (self.y, Line {
+            (y, Line {
                 layout:   self.layout,
                 pos:      b.prev,
                 branches: 0,
@@ -471,11 +497,11 @@ impl<'a> Iterator for Line<'a> {
                     }
 
                     // take current location
-                    let x = self.measure.at(self.line.factor);
+                    let x = self.measure.at(self.line.factor) + self.line.indent;
 
                     // add the width of the item
                     self.measure += m.content;
-
+                            
                     let size = Size::new(m.content.at(self.line.factor), m.height);
                     return Some((x, size, item, tag));
                 },
@@ -490,7 +516,8 @@ impl<'a> Iterator for Line<'a> {
                     self.branches += 1;
                 },
                 Entry::BranchExit(skip) => self.pos += skip,
-                Entry::Linebreak(_) => unreachable!(),
+                Entry::Linebreak(_, _) => unreachable!(),
+                Entry::SetWidth(_, _) => {}
             }
         }
         

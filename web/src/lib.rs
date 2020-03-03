@@ -1,4 +1,5 @@
 use grafeia_app::app::{App, NetworkApp};
+use grafeia_core::{State, SiteId};
 use wasm_bindgen::prelude::*;
 use web_sys::HtmlCanvasElement;
 use std::panic;
@@ -57,13 +58,14 @@ pub fn online(canvas: HtmlCanvasElement) -> WasmView {
 }
 
 #[wasm_bindgen]
-pub fn offline(canvas: HtmlCanvasElement) -> WasmView {
+pub fn offline(canvas: HtmlCanvasElement, data: &[u8]) -> WasmView {
+    let state = State::load(data).unwrap();
     WasmView::new(
         canvas,
         Config {
             zoom: false,
             pan: false
         },
-        Box::new(App::build()) as _
+        Box::new(App::from_state(state, SiteId(1))) as _
     )
 }

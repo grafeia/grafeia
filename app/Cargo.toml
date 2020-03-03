@@ -4,10 +4,6 @@ version = "0.1.0"
 authors = ["Sebastian K <s3bk@protonmail.com>"]
 edition = "2018"
 
-[features]
-import_markdown = ["pulldown-cmark"]
-export_docx = ["docx"]
-
 [dependencies]
 grafeia_core = { path = "../core" }
 pathfinder_content = { git = "https://github.com/s3bk/pathfinder/" }
@@ -21,17 +17,14 @@ unicode_categories = "*"
 futures = "0.3"
 
 cfg-if = "*"
-winit = { git = "https://github.com/s3bk/winit", features = ["web-sys"] }
 serde = { version = "1.0", features = ["derive"] }
 unicode-segmentation = "1.6.0"
 bincode = "*"
 pathfinder_view = { git = "https://github.com/s3bk/pathfinder_view" }
 log = "0.4.8"
-docx = { version = "*", optional = true }
-pulldown-cmark = { version = "*", optional = true }
 
 [target.'cfg(target_arch="wasm32")'.dependencies]
-web-sys = { version = "*", features = ["Storage", "Window"] }
+web-sys = { version = "*", features = ["Storage", "Window", "Performance"] }
 wasm-bindgen = { version = "*" }
 serde_json = "*"
 base64  = "*"

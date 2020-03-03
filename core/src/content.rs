@@ -228,6 +228,23 @@ impl Design {
 }
 
 #[derive(Serialize, Deserialize)]
+#[derive(Debug, Copy, Clone)]
+pub enum Display {
+    Block(VerticalPadding),
+    Inline,
+
+    // Indent
+    Paragraph(units::Length, VerticalPadding)
+}
+
+#[derive(Serialize, Deserialize)]
+#[derive(Debug, Copy, Clone)]
+pub struct VerticalPadding {
+    pub above: Length,
+    pub below: Length
+}
+
+#[derive(Serialize, Deserialize)]
 #[derive(Debug, Clone)]
 pub struct TypeDesign {
     pub display:        Display,
@@ -235,7 +252,12 @@ pub struct TypeDesign {
     pub word_space:     FlexMeasure,
     pub line_height:    Length,
     pub dictionary:     DictId,
-    pub hyphen:         SymbolId,
+    pub hyphen:         Option<SymbolId>,
+    pub indent:         Length,
+}
+
+pub enum VerticalAlign {
+    Baseline,
 }
 
 // this is a font. it contains all baked in settings

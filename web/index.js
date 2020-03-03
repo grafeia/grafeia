@@ -1,6 +1,11 @@
 let ws_callback = null;
 let ws = null;
 let log_div = document.getElementById("log");
+const ERROR = 1;
+const WARN = 2;
+const INFO = 3;
+const DEBUG = 4;
+const TRACE = 5;
 const log_fns = {
     1: s => console.error(s),
     2: s => console.warn(s),
@@ -13,7 +18,7 @@ function log(level, msg) {
     if (ws) {
         ws.send(msg);
     }
-    if (level <= 3) {
+    if (level <= INFO) {
         let p = document.createElement("p");
         p.appendChild(document.createTextNode(msg));
         log_div.appendChild(p);
@@ -50,6 +55,14 @@ function ws_url() {
     let protocol = { "http:": "ws:", "https:": "wss:" }[location.protocol];
     return `${protocol}//${window.location.host}/log`;
 }
+function data_url() {
+    let location = window.location;
+    let name = "demo";
+    if (location.hash) {
+        name = location.hash.substr(1);
+    }
+    return `${location.protocol}//${location.host}${location.pathname}${name}.graf`;
+}
 function connect() {
     return new Promise(function(resolve, reject) {
         // Create WebSocket connection.
@@ -72,26 +85,50 @@ function connect() {
         });
     });
 }
+let spin_fan = false;
 let view;
-function init_view(socket) {
+async function init_view(socket) {
     let canvas = document.getElementById("canvas");
     let capture = document.getElementById("capture");
     if (socket) {
         view = wasm_bindgen.online(canvas);
     } else {
-        view = wasm_bindgen.offline(canvas);
+        let url = data_url();
+        log(INFO, `fetching document from ${url}`);
+        let response = await fetch(url);
+        if (response.status != 200) {
+            log(ERROR, `${url} not found`);
+            return;
+        }
+        let data = new Uint8Array(await response.arrayBuffer());
+
+        log(INFO, "initializing");
+        view = wasm_bindgen.offline(canvas, data);
     }
 
     let requested = false;
     function animation_frame(time) {
         requested = false;
+        let t0 = performance.now();
         view.animation_frame(time);
+        let t1 = performance.now();
+        let dt = t1 - t0;
+        console.log(`${dt}ms (${1000 / dt}fps)`);
+
+        request_animation_frame();
     }
-    function check(_request_redraw) {
-        let request_redraw = view.idle();
-        if (request_redraw && !requested) {
+
+    function request_animation_frame() {
+        if (!requested) {
             window.requestAnimationFrame(animation_frame);
             requested = true;
+        }
+    }
+
+    function check(_request_redraw) {
+        let request_redraw = view.idle();
+        if (request_redraw) {
+            request_animation_frame();
         }
     }
 
@@ -122,8 +159,9 @@ async function init() {
     }
 
     try {
-        init_view(ws);
+        await init_view(ws);
         view.idle();
+        view.render();
     } catch (e) {
         log(1, e);
     }
