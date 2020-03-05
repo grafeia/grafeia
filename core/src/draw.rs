@@ -53,21 +53,30 @@ pub enum Marker {
     Start(SequenceId),
     End(SequenceId),
 }
-pub enum RenderedWord {
-    Full(RectF),
+pub enum RenderedWord<R> {
+    Full(R),
     // part before hyphenation, part after hyphenation, index at which the word was broken
-    Before(RectF, u16),
-    After(RectF, u16),
-    Both(RectF, RectF, u16)
+    Before(R, u16),
+    After(R, u16),
+    Both(R, R, u16)
 }
 pub struct Pages {
     pub columns: Columns,
+    pub map: TagMap,
 }
+impl Pages {
+    pub fn len(&self) -> usize {
+        self.columns.len()
+    }
+}
+pub struct TagMap {
+    pub positions: HashMap<Tag, (u32, RectF)>,
+    pub word_positions: HashMap<Tag, RenderedWord<(u32, RectF)>>,
+}
+
 pub struct Page {
     scene: Scene,
     items: Vec<(f32, Vec<(f32, Tag)>)>,
-    pub positions: HashMap<Tag, RectF>,
-    pub word_positions: HashMap<Tag, RenderedWord>,
 }
 impl Page {
     pub fn scene(&self) -> &Scene {
@@ -168,8 +177,6 @@ impl Cache {
                 gen.add(|writer| writer.item(space, space, measure, RenderItem::Word(key, part, font), tag));
 
                 dict.hyphenate(text, |index, before, after| {
-                    //debug!("{} -> {}‐{} ({})", word.text, before, after, index);
-
                     gen.add(|writer| {
                         let part = WordPart::Before(index as u16);
                         let measure = self.measure_word_part(ctx, tag, font, key, before, part);
@@ -280,7 +287,7 @@ impl Cache {
         }
     }
 
-    pub fn layout(&mut self, storage: &Storage, design: &Design, target: &Target, root: SequenceId) -> Columns {
+    pub fn layout(&mut self, storage: &Storage, design: &Design, target: &Target, root: SequenceId) -> Pages {
         let mut writer = Writer::new();
         let type_design = design.default();
         let ctx = DrawCtx {
@@ -295,7 +302,68 @@ impl Cache {
 
         let stream = writer.finish();
         let layout = ColumnLayout::new(stream, target.content_box.width, target.content_box.height);
-        layout.columns()
+        let columns = layout.columns();
+        let map = self.build_locations(target, &columns);
+        Pages {
+            columns,
+            map
+        }
+    }
+
+    fn build_locations(&self, target: &Target, columns: &Columns) -> TagMap {
+        let content_box: RectF = target.content_box.into();
+        let mut positions = HashMap::new();
+        let mut word_positions = HashMap::new();
+
+        for (page_nr, column) in columns.columns().enumerate() {
+            for (y, line) in column {
+                for (x, size, item, tag) in line {
+                    let size: Vector2F = size.into();
+                    let p = content_box.origin() + Vector2F::new(x.value as f32, y.value as f32);
+                    let rect = (page_nr as u32, RectF::new(p - Vector2F::new(0.0, size.y()), size));
+                    match item {
+                        RenderItem::Word(key, part, font) => {
+                            use std::collections::hash_map::Entry;
+                            match (part, word_positions.entry(tag)) {
+                                (WordPart::Full, Entry::Vacant(e)) => {
+                                    e.insert(RenderedWord::Full(rect));
+                                }
+                                (WordPart::Before(idx), Entry::Vacant(e)) => {
+                                    e.insert(RenderedWord::Before(rect, idx));
+                                }
+                                (WordPart::After(idx), Entry::Vacant(e)) => {
+                                    e.insert(RenderedWord::After(rect, idx));
+                                }
+                                (WordPart::After(idx), Entry::Occupied(mut e)) => {
+                                    match *e.get() {
+                                        RenderedWord::Before(prev_rect, idx2) => {
+                                            assert_eq!(idx, idx2);
+                                            e.insert(RenderedWord::Both(prev_rect, rect, idx));
+                                        }
+                                        _ => panic!("invalid state")
+                                    }
+                                },
+                                _ => panic!()
+                            }
+                        }
+                        RenderItem::Symbol(key, font) => {
+                            positions.insert(tag, rect);
+                        }
+                        RenderItem::Object(key) => {
+                            positions.insert(tag, rect);
+                        }
+                        RenderItem::Empty => {
+                            positions.insert(tag, rect);
+                        }
+                    }
+                }
+            }
+        }
+
+        TagMap {
+            positions,
+            word_positions
+        }
     }
 
     pub fn render_page(&mut self, storage: &Storage, target: &Target, design: &Design, column: Column) -> Page {
@@ -371,21 +439,19 @@ impl Cache {
                         let typ_design = design.get_type_or_default(storage.get_weave(tag.seq()).typ());
                         storage.get_object(key).draw(typ_design, p, size.into(), &mut scene);
                         line_items.push((p.x(), tag));
-                        positions.insert(tag, rect);
                     }
                     RenderItem::Empty => {
                         line_items.push((p.x(), tag));
-                        positions.insert(tag, rect);
                     }
                 };
             }
             line_indices.push((y.value + content_box.origin().y(), line_items));
         }
 
-        Page { scene, items: line_indices, positions, word_positions }
+        Page { scene, items: line_indices }
     }
 
-    pub fn get_position_on_page(&self, storage: &Storage, design: &Design, page: &Page, tag: Tag, byte_pos: usize) -> Option<Vector2F> {
+    pub fn get_position(&self, storage: &Storage, design: &Design, pages: &Pages, tag: Tag, byte_pos: usize) -> Option<(usize, Vector2F)> {
         match storage.get_item(tag)? {
             Item::Word(key) => {
                 let seq = storage.get_weave(tag.seq());
@@ -393,12 +459,12 @@ impl Cache {
                 let word = storage.get_word(key);
                 let face = storage.get_font_face(type_design.font.font_face);
 
-                let (off, rect, part) = match *page.word_positions.get(&tag)? {
-                    RenderedWord::Full(rect) => (0, rect, WordPart::Full),
-                    RenderedWord::Before(rect, idx) => (0, rect, WordPart::Before(idx)),
-                    RenderedWord::After(rect, idx) => (idx as usize, rect, WordPart::After(idx)),
-                    RenderedWord::Both(rect, _, idx) if byte_pos < (idx as usize) => (0, rect, WordPart::Before(idx)),
-                    RenderedWord::Both(_, rect, idx) => (idx as usize, rect, WordPart::After(idx))
+                let (page_nr, off, rect, part) = match *pages.map.word_positions.get(&tag)? {
+                    RenderedWord::Full((n, rect)) => (n, 0, rect, WordPart::Full),
+                    RenderedWord::Before((n, rect), idx) => (n, 0, rect, WordPart::Before(idx)),
+                    RenderedWord::After((n, rect), idx) => (n, idx as usize, rect, WordPart::After(idx)),
+                    RenderedWord::Both((n, rect), _, idx) if byte_pos < (idx as usize) => (n, 0, rect, WordPart::Before(idx)),
+                    RenderedWord::Both(_, (n, rect), idx) => (n, idx as usize, rect, WordPart::After(idx))
                 };
                 if off > byte_pos {
                     return None;
@@ -406,7 +472,7 @@ impl Cache {
                 let byte_pos = byte_pos - off;
 
                 if byte_pos == 0 {
-                    return Some(rect.lower_left());
+                    return Some((page_nr as usize, rect.lower_left()));
                 }
                 let grapheme_indices = grapheme_indices(face, &word.text);
                 let layout = self.word_layout_cache.get(&(type_design.font, key, part)).unwrap();
@@ -420,21 +486,21 @@ impl Cache {
                 let mut last = (0, Vector2F::default());
                 for (&n, &(_gid, offset)) in grapheme_indices.iter().zip(layout.glyphs.iter()) {
                     if n >= byte_pos {
-                        return Some(rect.lower_left() + interpolate(last, (n, offset.vector,), byte_pos));
+                        return Some((page_nr as usize, rect.lower_left() + interpolate(last, (n, offset.vector,), byte_pos)));
                     }
                     last = (n, offset.vector);
                 }
 
-                Some(rect.lower_left() + interpolate(last, (word.text.len(), layout.advance), byte_pos))
+                Some((page_nr as usize, rect.lower_left() + interpolate(last, (word.text.len(), layout.advance), byte_pos)))
             }
             Item::Symbol(_) => {
-                let &rect = page.positions.get(&tag)?;
-                Some(rect.lower_right())
+                let &(page_nr, rect) = pages.map.positions.get(&tag)?;
+                Some((page_nr as usize, rect.lower_right()))
             }
             Item::Sequence(key) => {
                 storage.get_first(key)
-                    .and_then(|(first, _)| page.positions.get(&first))
-                    .map(|rect| rect.lower_left())
+                    .and_then(|(first, _)| pages.map.positions.get(&first))
+                    .map(|&(n, rect)| (n as usize, rect.lower_left()))
             }
             _ => None
         }

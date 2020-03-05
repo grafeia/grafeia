@@ -1,6 +1,6 @@
 use grafeia_core::{
     *,
-    draw::{Cache, Page},
+    draw::{Cache, Page, RenderedWord, Pages},
     layout::Columns
 };
 use pathfinder_renderer::scene::Scene;
@@ -73,7 +73,7 @@ pub struct App {
     cache: Cache,
     pages: Vec<Option<Page>>,
     cursor: Option<Cursor>,
-    columns: Option<Columns>,
+    columns: Option<Pages>,
 }
 impl App {
     pub fn from_state(state: State, site: SiteId) -> Self {
@@ -121,34 +121,65 @@ impl App {
             return;
         }
 
-        let column = columns.get_column(page_nr);
+        let column = columns.columns.get_column(page_nr);
         let page = self.cache.render_page(&self.document, &self.target, &self.design, column);
         self.pages[page_nr] = Some(page);
     }
     fn page_position(&self, page_nr: usize, tag: Tag) -> Option<RectF> {
-        self.pages.get(page_nr)?.as_ref()?.positions.get(&tag).cloned()
+        let page_nr = page_nr as u32;
+        let map = &self.columns.as_ref()?.map;
+        if let Some(&(p, r)) = map.positions.get(&tag) {
+            if p == page_nr {
+                Some(r)
+            } else {
+                None
+            }
+        } else if let Some(rendered) = map.word_positions.get(&tag) {
+            match *rendered {
+                RenderedWord::Full((p, r)) if p == page_nr => Some(r),
+                RenderedWord::Before((p, r1), _) if p == page_nr => Some(r1),
+                RenderedWord::After((p, r2), _) if p == page_nr => Some(r2),
+                RenderedWord::Both((p, r1), _, _) if p == page_nr => Some(r1),
+                RenderedWord::Both(_, (p, r2), _) if p == page_nr => Some(r2),
+                _ => None
+            }
+        } else {
+            None
+        }
     }
     fn get_position(&self, tag: Tag) -> Option<(usize, RectF)> {
+        let map = &self.columns.as_ref()?.map;
         let tag = match tag {
             Tag::Item(_, _) => match self.document.get_item(tag)? {
                 Item::Sequence(id) => Tag::End(id),
+                Item::Word(id) => {
+                    let rendered = map.word_positions.get(&tag)?;
+                    let (n, rect) = match *rendered {
+                        RenderedWord::Full(r) => r,
+                        RenderedWord::Before(r1, _) => r1,
+                        RenderedWord::After(r2, _) => r2,
+                        RenderedWord::Both(r1, r2, _) => r1,
+                    };
+                    return Some((n as usize, rect));
+                }
                 _ => tag
             }
             _ => tag
         };
-        let page_nr = 0;
-        let &p = self.pages.get(page_nr)?.as_ref()?.positions.get(&tag)?;
-        debug!("{:?} at {:?}", tag, p);
-        Some((0, p))
+        let &(n, p) = map.positions.get(&tag)?;
+        debug!("{:?} at {:?} on page {}", tag, p, n);
+        Some((n as usize, p))
     }
     fn set_cursor_to(&mut self, tag: Tag, pos: ItemPos) {
         debug!("set_cursor_to({:?}, {:?}", tag, pos);
+        let columns = self.columns.as_ref().unwrap();
         let weave = self.document.get_weave(tag.seq());
         match tag {
             Tag::Start(_) | Tag::End(_) => {
-                if let Some((_, rect)) = self.get_position(tag) {
+                if let Some((page, rect)) = self.get_position(tag) {
                     self.cursor = Some(Cursor {
                         tag,
+                        page,
                         pos,
                         page_pos: rect.lower_left()
                     });
@@ -158,11 +189,12 @@ impl App {
                 let item = weave.get_item(id).unwrap();
                 match (pos, item) {
                     (ItemPos::After, _) => {
-                        if let Some((_, rect)) = self.get_position(tag) {
+                        if let Some((page, rect)) = self.get_position(tag) {
                             let type_key = weave.typ();
                             let typ = self.design.get_type_or_default(type_key);
                             self.cursor = Some(Cursor {
                                 tag,
+                                page,
                                 pos,
                                 page_pos: rect.lower_right() + Vector2F::new(0.5 * typ.word_space.length.value, 0.0),
                             });
@@ -171,10 +203,10 @@ impl App {
                         }
                     }
                     (ItemPos::Within(text_pos), Item::Word(_)) => {
-                        let page = self.pages.get(0).unwrap().as_ref().unwrap();
-                        self.cursor = self.cache.get_position_on_page(self.document.storage(), &self.design, page, tag, text_pos)
-                        .map(|page_pos| Cursor {
+                        self.cursor = self.cache.get_position(self.document.storage(), &self.design, columns, tag, text_pos)
+                        .map(|(page, page_pos)| Cursor {
                             tag,
+                            page,
                             pos,
                             page_pos,
                         });
@@ -345,6 +377,7 @@ impl App {
                     }
                     CursorOp::GraphemeLeft | CursorOp::ItemLeft => {
                         let prev_tag = self.document.get_previous_tag(cursor.tag)?;
+                        debug!("prev of {:?}: {:?}", cursor.tag, prev_tag);
                         Some((prev_tag, ItemPos::After))
                     }
                     CursorOp::GraphemeRight | CursorOp::ItemRight => {
@@ -422,6 +455,7 @@ enum ItemPos {
 #[derive(PartialEq, Copy, Clone, Debug)]
 struct Cursor {
     tag: Tag,   // which item
+    page: usize,
     pos: ItemPos, // between this and the following
     page_pos: Vector2F,
 }
@@ -434,7 +468,7 @@ impl Interactive for App {
         self.pages.len()
     }
     fn scene(&mut self, page_nr: usize) -> Scene {
-        if self.pages[page_nr].is_none() {
+        if self.pages.get(page_nr).expect("page out of bounds").is_none() {
             self.render_page(page_nr);
         }
         let mut scene = self.pages[page_nr].as_ref().unwrap().scene().clone();
@@ -530,6 +564,7 @@ impl Interactive for App {
             if let Some((word_offset, n)) = self.cache.find(self.document.storage(), &self.design, offset, tag) {
                 self.cursor = Some(Cursor {
                     tag,
+                    page,
                     page_pos: word_offset + word_pos,
                     pos: ItemPos::Within(n)
                 });

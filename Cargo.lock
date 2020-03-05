@@ -1931,9 +1931,9 @@ name = "pathfinder_webgl"
 version = "0.1.0"
 dependencies = [
  "image 0.21.3",
- "log 0.4.8",
  "pathfinder_geometry",
  "pathfinder_gpu",
+ "pathfinder_log",
  "pathfinder_renderer",
  "pathfinder_resources",
  "pathfinder_simd",
