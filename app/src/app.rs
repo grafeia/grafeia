@@ -586,7 +586,7 @@ impl Interactive for App {
         }
     }
     fn exit(&mut self, ctx: &mut Context) {
-        self.store()
+        //self.store()
     }
 }
 

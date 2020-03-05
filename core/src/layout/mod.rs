@@ -34,20 +34,28 @@ pub struct ItemMeasure {
     pub height:  Length,
 }
 
+enum Break {
+    Deny,
+    Allow(f32),
+    Force
+}
+
 /// used as input to the line breaking algorithm
 #[derive(Debug)]
 #[allow(dead_code)]
 enum Entry {
     Item(ItemMeasure, RenderItem, Tag),
     
-    /// Continue on the next line (fill)
-    Linebreak(bool, Length),
+    /// Continue on the next line (fill), and penalty for a column break
+    Linebreak(bool, Length, Option<f32>),
     
+    Column,
+
     /// Indent, Width
     SetWidth(Length, Length),
 
-    /// (measure, breaking)
-    Space(FlexMeasure, bool),
+    /// (measure, line break, column break)
+    Space(FlexMeasure, Option<f32>, Option<f32>),
 
     /// Somtimes there are different possiblites of representing something.
     /// A Branch solves this by splitting the stream in two parts.

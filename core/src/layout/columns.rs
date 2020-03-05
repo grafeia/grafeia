@@ -157,27 +157,34 @@ impl ParagraphLayout {
             let is_first = start == n;
             match self.items[n] {
                 Entry::Item(m, _, _) => c.add_item(m, is_first),
-                Entry::Space(s, breaking) => {
-                    if breaking {
-                        // breaking case:
-                        // width is not added yet!
-                        self.maybe_update(&c, n+1);
-                        last = n+1;
-                    }
+                Entry::Space(s, Some(penalty), _) => {
+                    // breaking case:
+                    // width is not added yet!
+                    self.maybe_update(&c, n+1, penalty);
+                    last = n+1;
                     
                     // add width now.
                     c.add_space(s);
+                },
+                Entry::Space(s, None, _) => {
+                    c.add_space(s);
                 }
 
-                Entry::Linebreak(fill, _) => {
+                Entry::Linebreak(fill, _, _) => {
                     if fill {
                         c.fill(c.width);
                     }
                     
-                    self.maybe_update(&c, n+1);
+                    self.maybe_update(&c, n+1, 0.0);
                     last = n+1;
                     break;
                 },
+
+                Entry::Column => {
+                    self.maybe_update(&c, n+1, 0.0);
+                    last = n+1;
+                    break;
+                }
 
                 Entry::SetWidth(indent, width) => {
                     c.indent = indent;
@@ -218,13 +225,13 @@ impl ParagraphLayout {
         last
     }
 
-    fn maybe_update(&mut self, c: &Context, n: usize) {
+    fn maybe_update(&mut self, c: &Context, n: usize, penalty: f32) {
         let (factor, score) = match c.line().factor(c.width) {
             Some(factor) => (factor, -factor * factor),
             None => (1.0, -1000.)
         };
 
-        let break_score = c.score + score;
+        let break_score = c.score + score + penalty;
         let break_point = LineBreak {
             factor: factor,
             score:  break_score,
@@ -303,8 +310,8 @@ impl ColumnLayout {
 
     fn num_lines_penalty(&self, n: usize) -> f32 {
         match n {
-            1 => -500.0,
-            2 => -100.0,
+           // 0 => -100.0,
+            1 => -20.0,
             _ => 0.0
         }
     }
@@ -325,32 +332,38 @@ impl ColumnLayout {
         loop {
             let last_node = self.para.nodes[last].unwrap();
             
-            if last > 0 {
-                match self.para.items[last-1] {
-                    Entry::Linebreak(_, skip) => {
+            let penalty = if last > 0 {
+                let penalty = match self.para.items[last-1] {
+                    Entry::Linebreak(_, skip, col_break) => {
                         is_last_paragraph = false;
                         num_lines_before_end = 0;
                         height += skip;
+                        col_break
                     },
-                    Entry::Space { .. } => {
+                    Entry::Space(_, _, col_break) => {
                         num_lines_before_end += 1;
 
                         if is_last_paragraph {
                             num_lines_at_last_break += 1;
                         }
+                        col_break
                     }
                     ref e => panic!("found: {:?}", e)
-                }
+                };
                 
                 height += last_node.height;
 
                 if height > self.height {
                     break;
                 }
-            }
+                
+                penalty
+            } else {
+                Some(0.0)
+            };
 
-            if let Some(column) = self.nodes_col[last] {
-                let mut score = column.score
+            if let (Some(penalty), Some(column)) = (penalty, self.nodes_col[last]) {
+                let mut score = column.score + penalty
                     + self.num_lines_penalty(num_lines_at_last_break)
                     + self.num_lines_penalty(num_lines_before_end);
                 
@@ -451,7 +464,7 @@ impl<'a> Iterator for Column<'a> {
             self.y += b.height;
             let y = self.y;
 
-            if let Entry::Linebreak(_, skip) = self.layout.items[last-1] {
+            if let Entry::Linebreak(_, skip, _) = self.layout.items[last-1] {
                 self.y += skip;
             }
             
@@ -505,7 +518,7 @@ impl<'a> Iterator for Line<'a> {
                     let size = Size::new(m.content.at(self.line.factor), m.height);
                     return Some((x, size, item, tag));
                 },
-                Entry::Space(s, _) => {
+                Entry::Space(s, _, _) => {
                     self.measure += s;
                 },
                 Entry::BranchEntry(len) => {
@@ -516,8 +529,9 @@ impl<'a> Iterator for Line<'a> {
                     self.branches += 1;
                 },
                 Entry::BranchExit(skip) => self.pos += skip,
-                Entry::Linebreak(_, _) => unreachable!(),
+                Entry::Linebreak(_, _, _) => unreachable!(),
                 Entry::SetWidth(_, _) => {}
+                Entry::Column => unreachable!()
             }
         }
         

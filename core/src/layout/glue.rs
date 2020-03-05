@@ -2,16 +2,35 @@ use std::ops::{BitOr, BitOrAssign};
 use std::fmt;
 use super::{FlexMeasure, Length};
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum Glue {
     None,
     Space {
-        breaking:   bool,
-        measure:    FlexMeasure
+        line_break:     Option<f32>,
+        column_break:   Option<f32>,
+        measure:        FlexMeasure
     },
     Newline {
-        fill:       bool,
-        height:     Length
+        column_break:   Option<f32>,
+        fill:           bool,
+        height:         Length
+    },
+    Column
+}
+impl Glue {
+    pub fn hfill(height: Length) -> Glue {
+        Glue::Newline {
+            fill: true,
+            column_break: Some(0.),
+            height
+        }
+    } 
+}
+
+fn merge_break(a: Option<f32>, b: Option<f32>) -> Option<f32> {
+    match (a, b) {
+        (Some(a), Some(b)) => Some(a + b),
+        _ => None
     }
 }
 
@@ -25,29 +44,24 @@ impl BitOr for Glue {
             // Glue::None wins over anything else
             (None, _) | (_, None) => None,
             
-            (Space { breaking: false, .. }, Newline { .. }) |
-            (Newline { .. }, Space { breaking: false, .. }) => {
+            (Space { line_break: Option::None, .. }, Newline { .. }) |
+            (Newline { .. }, Space { line_break: Option::None, .. }) => {
                 panic!("Newline and NonBreaking requested");
             },
             
             // NonBreaking wins over Breaking
-            (Space { breaking: false, measure: a }, Space { breaking: true,  measure: b }) |
-            (Space { breaking: true,  measure: a }, Space { breaking: false, measure: b })
-             => Space { breaking: false, measure: a.max(b) },
+            (Space { line_break: lb_a, column_break: cb_a, measure: a }, Space { line_break: lb_b, column_break: cb_b, measure: b })
+                => Space { line_break: merge_break(lb_a, lb_b), column_break: merge_break(cb_a, cb_b), measure: a.max(b) },
             
-            // Newline wins over Breaking
-            (Newline { fill, height }, Space { breaking: true, .. }) |
-            (Space { breaking: true, .. }, Newline { fill, height })
-             => Newline { fill, height },
+            // Column wins
+            (Column, _) | (_, Column) => Column,
+
+            // Newline wins over Space
+            (Newline { fill, height, column_break }, Space { .. }) | (Space { .. }, Newline { fill, height, column_break })
+                => Newline { fill, height, column_break },
             
-            (Space { breaking: true, measure: a }, Space { breaking: true,  measure: b })
-             => Space { breaking: true, measure: a.max(b) },
-             
-            (Space { breaking: false, measure: a }, Space { breaking: false,  measure: b })
-             => Space { breaking: false, measure: a.max(b) },
-             
-            (Newline { fill: a, height: h_a }, Newline { fill: b, height: h_b })
-             => Newline { fill: a | b, height: h_a.max(h_b) }
+            (Newline { fill: a, height: h_a, column_break: cb_a }, Newline { fill: b, height: h_b, column_break: cb_b })
+                => Newline { fill: a | b, height: h_a.max(h_b), column_break: merge_break(cb_a, cb_b) }
         }
     }
 }
@@ -58,20 +72,11 @@ impl BitOrAssign for Glue {
 }
 
 impl Glue {
-    pub fn space(measure: FlexMeasure) -> Glue {
-        Glue::Space { breaking: true, measure }
-    }
     pub fn nbspace(measure: FlexMeasure) -> Glue {
-        Glue::Space { breaking: false, measure }
-    }
-    pub fn newline(height: Length) -> Glue {
-        Glue::Newline { fill: false, height }
-    }
-    pub fn hfill(height: Length) -> Glue {
-        Glue::Newline { fill: true, height }
+        Glue::Space { line_break: None, column_break: None, measure }
     }
     pub fn any() -> Glue {
-        Glue::Space { breaking: true, measure: FlexMeasure::zero() }
+        Glue::Space { line_break: Some(0.0), column_break: Some(0.0), measure: FlexMeasure::zero() }
     }
 }
 
@@ -79,9 +84,10 @@ impl fmt::Display for Glue {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             Glue::None => Ok(()),
-            Glue::Space { breaking: true, .. } => write!(f, "␣"),
-            Glue::Space { breaking: false, .. } => write!(f, "~"),
-            Glue::Newline { .. } => write!(f, "␤")
+            Glue::Space { line_break: Some(_), .. } => write!(f, "␣"),
+            Glue::Space { line_break: None, .. } => write!(f, "~"),
+            Glue::Newline { .. } => write!(f, "␤"),
+            Glue::Column => write!(f, "|")
         }
     }
 }

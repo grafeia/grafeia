@@ -28,8 +28,8 @@ impl StreamVec {
             out.extend(a);
         } else {
             let equal_end = match (a.last().unwrap(), b.last().unwrap()) {
-                (&Entry::Space(a_break, a_measure), &Entry::Space(b_break, b_measure)) =>
-                    (a_break == b_break) && (a_measure == b_measure),
+                (&Entry::Space(a_measure, a_line, a_col), &Entry::Space(b_measure, b_line, b_col)) =>
+                    (a_measure, a_line, a_col) == (b_measure, b_line, b_col),
                 _ => false
             };
             
@@ -98,11 +98,12 @@ impl Writer {
     #[inline(always)]
     fn write_glue(&mut self, left: Glue) {
         match self.state | left {
-            Glue::Newline { fill, height } => {
-                self.stream.push(Entry::Linebreak(fill, height));
+            Glue::Column => self.stream.push(Entry::Column),
+            Glue::Newline { fill, height, column_break } => {
+                self.stream.push(Entry::Linebreak(fill, height, column_break));
             },
-            Glue::Space { breaking, measure }
-             => self.stream.push(Entry::Space(measure, breaking)),
+            Glue::Space { measure, line_break, column_break }
+             => self.stream.push(Entry::Space(measure, line_break, column_break)),
             Glue::None => ()
         }
     }
@@ -116,8 +117,8 @@ impl Writer {
     pub fn item(&mut self, left: Glue, right: Glue, measure: ItemMeasure, item: RenderItem, tag: Tag) {
         self.push(left, right, Entry::Item(measure, item, tag));
     }
-    pub fn space(&mut self, left: Glue, right: Glue, measure: FlexMeasure, breaking: bool) {
-        self.push(left, right, Entry::Space(measure, breaking));
+    pub fn space(&mut self, left: Glue, right: Glue, measure: FlexMeasure, line_break: Option<f32>, column_break: Option<f32>) {
+        self.push(left, right, Entry::Space(measure, line_break, column_break));
     }
     pub fn set_width(&mut self, indent: Length, width: Length) {
         self.stream.push(Entry::SetWidth(indent, width));

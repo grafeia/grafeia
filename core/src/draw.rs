@@ -128,44 +128,58 @@ impl Cache {
         }
     }
 
-    fn render_word_part(&mut self, writer: &mut Writer, ctx: &DrawCtx, tag: Tag, font: Font, key: WordId, text: &str, part: WordPart) {
+    fn measure_word_part(&mut self, ctx: &DrawCtx, tag: Tag, font: Font, key: WordId, text: &str, part: WordPart) -> ItemMeasure {
         let layout = self.word_layout_cache.entry((font, key, part))
             .or_insert_with(|| {
                 let face = ctx.storage.get_font_face(font.font_face);
                 Cache::build_word_layout(text, face, font.size.value)
             });
-        let space = Glue::space(ctx.type_design.word_space);
         let width = layout.advance.x();
-        let measure = ItemMeasure {
+        ItemMeasure {
             left: FlexMeasure::zero(),
             content: FlexMeasure::fixed(Length::mm(width)),
             right: FlexMeasure::zero(),
             height: ctx.type_design.line_height
-        };
-        writer.item(space, space, measure, RenderItem::Word(key, part, font), tag);
+        }
     }
 
     fn render_word(&mut self, writer: &mut Writer, ctx: &DrawCtx, tag: Tag, key: WordId) {
         let dict = ctx.storage.get_dict(ctx.type_design.dictionary);
         let font = ctx.type_design.font;
         let word = ctx.storage.get_word(key);
-        let space = Glue::space(ctx.type_design.word_space);
+        let space = Glue::Space {
+            measure: ctx.type_design.word_space,
+            line_break: Some(0.0),
+            column_break: Some(-1.0)
+        };
+        
+        let hyphen_glue = Glue::Newline {
+            height: Length::zero(),
+            column_break: None,
+            fill: false
+        };
+
         let text = &word.text;
         if let Some(hyphen_id) = ctx.type_design.hyphen {
             let hyphen = ctx.storage.get_symbol(hyphen_id);
             writer.branch(|gen| {
-                gen.add(|writer| self.render_word_part(writer, ctx, tag, font, key, text, WordPart::Full));
+                let part = WordPart::Full;
+                let measure = self.measure_word_part(ctx, tag, font, key, text, part);
+                gen.add(|writer| writer.item(space, space, measure, RenderItem::Word(key, part, font), tag));
+
                 dict.hyphenate(text, |index, before, after| {
-                    debug!("{} -> {}‐{} ({})", word.text, before, after, index);
+                    //debug!("{} -> {}‐{} ({})", word.text, before, after, index);
 
                     gen.add(|writer| {
-                        self.render_word_part(writer, ctx, tag, font, key, before, WordPart::Before(index as u16));
+                        let part = WordPart::Before(index as u16);
+                        let measure = self.measure_word_part(ctx, tag, font, key, before, part);
+                        writer.item(space, Glue::None, measure, RenderItem::Word(key, part, font), tag);
                         
                         // hyphen
                         let width = Length::mm(self.symbol_layout(hyphen_id, &ctx.storage, font).advance.x());
                         writer.item(
                             Glue::None,
-                            Glue::newline(Length::zero()),
+                            hyphen_glue,
                             ItemMeasure {
                                 left: FlexMeasure::fixed(width * hyphen.overflow_left),
                                 content: FlexMeasure::fixed(width),
@@ -176,19 +190,23 @@ impl Cache {
                             tag
                         );
 
-                        self.render_word_part(writer, ctx, tag, font, key, after, WordPart::After(index as u16));
+                        let part = WordPart::After(index as u16);
+                        let measure = self.measure_word_part(ctx, tag, font, key, after, part);
+                        writer.item(hyphen_glue, space, measure, RenderItem::Word(key, part, font), tag);
                     });
                 });
             });
         } else {
-            self.render_word_part(writer, ctx, tag, font, key, text, WordPart::Full);
+            let part = WordPart::Full;
+            let measure = self.measure_word_part(ctx, tag, font, key, text, part);
+            writer.item(space, space, measure, RenderItem::Word(key, part, font), tag);
         }
     }
 
     fn render_symbol(&mut self, writer: &mut Writer, ctx: &DrawCtx, tag: Tag, key: SymbolId) {
         let symbol = ctx.storage.get_symbol(key);
         let font = ctx.type_design.font;
-        let space = Glue::space(ctx.type_design.word_space);
+        let space = Glue::Space { measure: ctx.type_design.word_space, line_break: Some(0.0), column_break: Some(0.0) };
         let width = Length::mm(self.symbol_layout(key, &ctx.storage, font).advance.x());
         writer.item(
             select(symbol.trailing, Glue::None, space),
@@ -228,7 +246,7 @@ impl Cache {
 
         match type_design.display {
             Display::Block(v) => writer.promote(Glue::hfill(v.above)),
-            Display::Paragraph(indent, v) => writer.space(Glue::hfill(v.above), Glue::None, FlexMeasure::fixed(indent), false),
+            Display::Paragraph(indent, v) => writer.space(Glue::hfill(v.above), Glue::None, FlexMeasure::fixed(indent), None, None),
             _ => {}
         }
         let inner_ctx = DrawCtx {
