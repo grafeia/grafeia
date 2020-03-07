@@ -981,6 +981,7 @@ dependencies = [
  "font",
  "hyphenation",
  "indexmap",
+ "instant",
  "itertools",
  "lazy_static",
  "log 0.4.8",
@@ -1289,6 +1290,9 @@ name = "instant"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6c346c299e3fe8ef94dc10c2c0253d858a69aac1245157a3bf4125915d528caf"
+dependencies = [
+ "time",
+]
 
 [[package]]
 name = "iovec"

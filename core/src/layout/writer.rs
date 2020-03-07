@@ -1,98 +1,135 @@
 use crate::layout::*;
-use std::iter::Extend;
 
-pub struct BranchGenerator<'a> {
-    parent: &'a Writer,
-    branches: Vec<(StreamVec, Glue)>
-}
-impl<'a> BranchGenerator<'a> {
-    pub fn add(&mut self, f: impl FnOnce(&mut Writer)) {
-        let mut w = self.parent.dup();
-        f(&mut w);
-        self.branches.push((w.stream, w.state));
-    }
-}
+#[derive(Debug)]
 pub struct Writer {
     state:      Glue,
     stream:     StreamVec,
+    branch_stack: BranchStack,
 }
 
-impl StreamVec {
-    // careful with the arguments.. they all have the same type!
-    fn merge(&mut self, StreamVec(mut a): StreamVec, StreamVec(mut b): StreamVec) {
-        let out = &mut self.0;
+#[derive(Debug)]
+enum BranchState {
+    // initially at Pre
+    Pre,
+    // then we get called before A gets pushed
+    A { entry_pos: usize },
+    // and again after A was pushed and before B is pushed
+    B { exit_pos: usize },
+    // and again after B was pushed
+    Post
+}
+impl BranchState {
+    fn step(&mut self, stream: &mut StreamVec) {
+        let pos = stream.len();
+        *self = match *self {
+            BranchState::Pre => {
+                stream.push(Entry::BranchEntry(0));
 
-        if a.len() == 0 {
-            out.extend(b);
-        } else if b.len() == 0 {
-            out.extend(a);
-        } else {
-            let equal_end = match (a.last().unwrap(), b.last().unwrap()) {
-                (&Entry::Space(a_measure, a_line, a_col), &Entry::Space(b_measure, b_line, b_col)) =>
-                    (a_measure, a_line, a_col) == (b_measure, b_line, b_col),
-                _ => false
-            };
-            
-            let end_sym = if equal_end {
-                a.pop();
-                b.pop()
-            } else {
-                None
-            };
+                BranchState::A { entry_pos: pos }
+            },
+            BranchState::A { entry_pos } => {
+                // figure out the length of a
+                stream.push(Entry::BranchEntry(0));
+                
+                let len_a = pos - entry_pos;
+                stream.set(entry_pos, Entry::BranchEntry(len_a));
 
-            out.push(Entry::BranchEntry(b.len() + 1));
-            out.extend(b);
-            out.push(Entry::BranchExit(a.len()));
-            out.extend(a);
-            
-            if let Some(end) = end_sym {
-                out.push(end);
+                BranchState::B { exit_pos: pos }
+            }
+            BranchState::B { exit_pos } => {
+                let len_b = pos - exit_pos - 1;
+                stream.set(exit_pos, Entry::BranchExit(len_b));
+
+                BranchState::Post
+            },
+            BranchState::Post => panic!()
+        };
+    }
+}
+
+#[derive(Debug)]
+struct Branch {
+    size: usize,
+    state: BranchState,
+}
+
+#[derive(Default, Debug)]
+struct BranchStack {
+    items: Vec<Branch>
+}
+impl BranchStack {
+    fn init(&mut self, n: usize) {
+        self.items.clear();
+        if n > 1 {
+            self.items.push(Branch {
+                size: n,
+                state: BranchState::Pre
+            });
+        }
+    }
+    fn step(&mut self, stream: &mut StreamVec) {
+        while self.items.len() > 0 {
+            let last = self.items.last_mut().unwrap();
+            if let BranchState::B { .. } = last.state {
+                last.state.step(stream);
+                self.items.pop();
+                continue;
+            }
+
+            match last {
+                &mut Branch { size: 2, ref mut state } => {
+                    state.step(stream);
+                    return;
+                },
+                &mut Branch { size, ref mut state } if size > 2 => {
+                    state.step(stream);
+                    let half = size / 2;
+                    let branch_size = match *state {
+                        BranchState::A { .. } => half,
+                        BranchState::B { .. } => size - half,
+                        _ => unreachable!()
+                    };
+                    if branch_size == 1 {
+                        // good to go
+                        return;
+                    }
+                    self.items.push(Branch {
+                        size: branch_size,
+                        state: BranchState::Pre
+                    });
+                }
+                b => panic!("{:?}", b)
             }
         }
     }
+    fn finish(&mut self, stream: &mut StreamVec) {
+        self.step(stream);
+        assert_eq!(self.items.len(), 0);
+    }
 }
+
 impl Writer {
     pub fn new() -> Writer {
         Writer {
             state:  Glue::None,
             stream: StreamVec::new(),
+            branch_stack: BranchStack::default(),
         }
     }
-    fn dup(&self) -> Writer {
+    pub fn with_stream(stream: StreamVec) -> Writer {
         Writer {
-            stream: StreamVec::new(),
-            ..      *self
+            state:  Glue::None,
+            stream,
+            branch_stack: BranchStack::default(),
         }
     }
-    
     pub fn finish(mut self) -> StreamVec {
         self.write_glue(Glue::any());
         self.stream
     }
-    
-    fn push_branch<I>(&mut self, mut ways: I) where I: Iterator<Item=StreamVec> {
-        if let Some(default) = ways.next() {
-            let mut others: Vec<StreamVec> = ways.collect();
-            
-            if others.len() == 0 {
-                self.stream.0.extend(default.0);
-                return;
-            }
-            
-            while others.len() > 1 {
-                for n in 0 .. others.len() / 2 {
-                    use std::mem;
-                    // TODO use with_capacity
-                    let mut merged = StreamVec::new();
-                    let mut tmp = StreamVec::new();
-                    
-                    mem::swap(&mut tmp, others.get_mut(n).unwrap());
-                    merged.merge(tmp, others.pop().unwrap());
-                    others[n] = merged;
-                }
-            }
-            self.stream.merge(default, others.pop().unwrap());
-        }
+    pub fn clear(&mut self) {
+        self.state = Glue::None;
+        self.stream.0.clear();
     }
     
     #[inline(always)]
@@ -129,25 +166,29 @@ impl Writer {
         self.state |= glue;
     }
 
-    pub fn branch(&mut self, f: impl FnOnce(&mut BranchGenerator))
-    {
-        let mut branches = {
-            let mut gen = BranchGenerator {
-                parent:     self,
-                branches:   Vec::new()
-            };
-            f(&mut gen);
-        
-            gen.branches
-        };
-        let mut glue = Glue::any();
-        self.push_branch(branches.drain(..).map(|(v, s)| {
-            glue |= s;
-            v
-        }));
-        self.state = glue;
-        // FIXME
-        //self.state = right;
+    // much faster variant, but expects exactly count branches (calls to f)
+    pub fn branch2(&mut self, count: usize, f: impl FnOnce(&mut Gen2)) {
+        self.branch_stack.init(count);
+        f(&mut Gen2 {
+            writer: self,
+            count,
+            at: 0
+        });
+        self.branch_stack.finish(&mut self.stream);
     }
 }
- 
+
+#[derive(Debug)]
+pub struct Gen2<'a> {
+    writer: &'a mut Writer,
+    count: usize,
+    at: usize,
+}
+impl<'a> Gen2<'a> {
+    pub fn add(&mut self, f: impl FnOnce(&mut Writer)) {
+        assert!(self.at < self.count);
+        self.writer.branch_stack.step(&mut self.writer.stream);
+        f(self.writer);
+        self.at += 1;
+    }
+}

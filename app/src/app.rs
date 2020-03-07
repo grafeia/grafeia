@@ -1,14 +1,13 @@
 use grafeia_core::{
     *,
-    draw::{Cache, Page, RenderedWord, Pages},
-    layout::Columns
+    draw::{Cache, Page, RenderedWord},
 };
 use pathfinder_renderer::scene::Scene;
 use pathfinder_geometry::{
     vector::Vector2F,
     rect::RectF
 };
-use pathfinder_view::{Interactive, Context, ElementState, KeyEvent, KeyCode, Modifiers};
+use pathfinder_view::{Interactive, Context, ElementState, KeyEvent, KeyCode};
 use vector::{PathBuilder, PathStyle, Surface, FillRule, Paint};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_categories::UnicodeCategories;
@@ -16,54 +15,6 @@ use std::borrow::Cow;
 
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
-
-#[cfg(not(target_arch = "wasm32"))]
-fn store_data(key: &str, data: &[u8]) {
-    std::fs::write(&format!(".{}.data", key), data).unwrap();
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn load_data(key: &str) -> Option<Vec<u8>> {
-    std::fs::read(&format!(".{}.data", key)).ok()
-}
-
-#[cfg(target_arch = "wasm32")]
-fn store_data(key: &str, data: &[u8]) {
-    let encoded = base64::encode(data);
-    web_sys::window().unwrap()
-        .local_storage().unwrap().unwrap()
-        .set_item(key, &encoded).unwrap();
-}
-
-#[cfg(target_arch = "wasm32")]
-fn load_data(key: &str) -> Option<Vec<u8>> {
-    let encoded = web_sys::window().unwrap()
-        .local_storage().unwrap().unwrap()
-        .get_item(key).unwrap()?;
-    
-    base64::decode(&encoded).ok()
-}
-
-#[cfg(not(target_arch="wasm32"))]
-fn time<T>(msg: &str, f: impl FnOnce() -> T) -> T {
-    use std::time::Instant;
-    let start = Instant::now();
-    let r = f();
-    let elapsed = start.elapsed();
-    info!("{}: {}ms", msg, 1000. * elapsed.as_secs_f64());
-    r
-}
-#[cfg(target_arch="wasm32")]
-fn time<T>(msg: &str, f: impl FnOnce() -> T) -> T {
-    use web_sys::window;
-    let performance = window().unwrap().performance().unwrap();
-
-    let start = performance.now();
-    let r = f();
-    let end = performance.now();
-    info!("{}: {}ms", msg, end - start);
-    r
-}
 
 pub struct App {
     target: Target,
@@ -73,7 +24,6 @@ pub struct App {
     cache: Cache,
     pages: Vec<Option<Page>>,
     cursor: Option<Cursor>,
-    columns: Option<Pages>,
 }
 impl App {
     pub fn from_state(state: State, site: SiteId) -> Self {
@@ -90,11 +40,13 @@ impl App {
             document,
             cursor: None,
             pages: vec![],
-            columns: None,
             target,
             design
         };
+        info!("creating layout");
         app.layout();
+
+        info!("ready");
         app
     }
 
@@ -108,33 +60,25 @@ impl App {
         state.store(std::fs::File::create("document.graf").unwrap()).unwrap();
     }
     fn layout(&mut self) {
-        let columns = time("layout", || self.cache.layout(self.document.storage(), &self.design, &self.target, self.document.root()));
-        let num_pages = columns.len();
+        self.cache.layout(self.document.storage(), &self.design, &self.target, self.document.root());
+        let num_pages = self.cache.columns.as_ref().unwrap().len();
         info!("{} pages", num_pages);
 
         self.pages = std::iter::from_fn(|| Some(None)).take(num_pages).collect();
-        self.columns = Some(columns);
     }
     fn render_page(&mut self, page_nr: usize) {
-        let columns = self.columns.as_ref().unwrap();
-        if page_nr >= columns.len() {
-            return;
-        }
-
-        let column = columns.columns.get_column(page_nr);
-        let page = self.cache.render_page(&self.document, &self.target, &self.design, column);
+        let page = self.cache.render_page(&self.document, &self.target, &self.design, page_nr);
         self.pages[page_nr] = Some(page);
     }
     fn page_position(&self, page_nr: usize, tag: Tag) -> Option<RectF> {
         let page_nr = page_nr as u32;
-        let map = &self.columns.as_ref()?.map;
-        if let Some(&(p, r)) = map.positions.get(&tag) {
+        if let Some(&(p, r)) = self.cache.positions.get(&tag) {
             if p == page_nr {
                 Some(r)
             } else {
                 None
             }
-        } else if let Some(rendered) = map.word_positions.get(&tag) {
+        } else if let Some(rendered) = self.cache.word_positions.get(&tag) {
             match *rendered {
                 RenderedWord::Full((p, r)) if p == page_nr => Some(r),
                 RenderedWord::Before((p, r1), _) if p == page_nr => Some(r1),
@@ -148,17 +92,16 @@ impl App {
         }
     }
     fn get_position(&self, tag: Tag) -> Option<(usize, RectF)> {
-        let map = &self.columns.as_ref()?.map;
         let tag = match tag {
             Tag::Item(_, _) => match self.document.get_item(tag)? {
                 Item::Sequence(id) => Tag::End(id),
-                Item::Word(id) => {
-                    let rendered = map.word_positions.get(&tag)?;
+                Item::Word(_) => {
+                    let rendered = self.cache.word_positions.get(&tag)?;
                     let (n, rect) = match *rendered {
                         RenderedWord::Full(r) => r,
                         RenderedWord::Before(r1, _) => r1,
                         RenderedWord::After(r2, _) => r2,
-                        RenderedWord::Both(r1, r2, _) => r1,
+                        RenderedWord::Both(r1, _r2, _) => r1,
                     };
                     return Some((n as usize, rect));
                 }
@@ -166,13 +109,12 @@ impl App {
             }
             _ => tag
         };
-        let &(n, p) = map.positions.get(&tag)?;
+        let &(n, p) = self.cache.positions.get(&tag)?;
         debug!("{:?} at {:?} on page {}", tag, p, n);
         Some((n as usize, p))
     }
-    fn set_cursor_to(&mut self, tag: Tag, pos: ItemPos) {
+    fn set_cursor_to(&mut self, ctx: &mut Context, tag: Tag, pos: ItemPos) {
         debug!("set_cursor_to({:?}, {:?}", tag, pos);
-        let columns = self.columns.as_ref().unwrap();
         let weave = self.document.get_weave(tag.seq());
         match tag {
             Tag::Start(_) | Tag::End(_) => {
@@ -203,7 +145,7 @@ impl App {
                         }
                     }
                     (ItemPos::Within(text_pos), Item::Word(_)) => {
-                        self.cursor = self.cache.get_position(self.document.storage(), &self.design, columns, tag, text_pos)
+                        self.cursor = self.cache.get_position(self.document.storage(), &self.design, tag, text_pos)
                         .map(|(page, page_pos)| Cursor {
                             tag,
                             page,
@@ -218,6 +160,7 @@ impl App {
         debug!("cursor: {:?}", self.cursor);
 
         if let Some(cursor) = self.cursor {
+            ctx.goto_page(cursor.page);
             assert!(cursor.page_pos.x().is_finite());
             assert!(cursor.page_pos.y().is_finite());
         }
@@ -497,13 +440,29 @@ impl Interactive for App {
                 fill_rule: FillRule::NonZero
             });
 
-            let mark_seq = |scene: &mut Scene, p: Vector2F, w: f32| {
+            let mark_seq_end = |scene: &mut Scene, p: Vector2F, w: f32| {
                 let dx = Vector2F::new(w, 0.0);
                 let q = p - Vector2F::new(0.0, type_design.line_height.value);
                 let mut pb = PathBuilder::new();
                 pb.move_to(p);
                 pb.cubic_curve_to(p + dx, q + dx, q);
                 scene.draw_path(pb.into_outline(), &mark_style, None);
+            };
+            let word_space = type_design.word_space.length.value;
+            let mark_seq = |scene: &mut Scene, tag: Tag| {
+                match tag {
+                    Tag::Start(seq) => {
+                        if let Some(rect) = self.page_position(page_nr, Tag::End(seq)) {
+                            mark_seq_end(scene, rect.lower_left(), 0.5 * word_space);
+                        }
+                    }
+                    Tag::End(seq) => {
+                        if let Some(rect) = self.page_position(page_nr, Tag::Start(seq)) {
+                            mark_seq_end(scene, rect.lower_right(), -0.5 * word_space);
+                        }
+                    }
+                    _ => {}
+                }
             };
             let mark_word = |scene: &mut Scene, tag: Tag| {
                 if let Some(rect) = self.page_position(0, tag) {
@@ -513,16 +472,7 @@ impl Interactive for App {
                     scene.draw_path(pb.into_outline(), &underline_style, None);
                 }
             };
-            let word_space = type_design.word_space.length.value;
-            match cursor.tag {
-                Tag::Start(seq) => {
-                    mark_seq(&mut scene, self.page_position(0, Tag::End(seq)).unwrap().lower_left(), 0.5 * word_space);
-                }
-                Tag::End(seq) => {
-                    mark_seq(&mut scene, self.page_position(0, Tag::Start(seq)).unwrap().lower_right(), -0.5 * word_space);
-                }
-                _ => {}
-            }
+            mark_seq(&mut scene, cursor.tag);
 
             match self.document.get_item(cursor.tag) {
                 Some(Item::Word(_)) => {
@@ -532,8 +482,8 @@ impl Interactive for App {
                     for child in self.document.childen(key) {
                         mark_word(&mut scene, child);
                     }
-                    mark_seq(&mut scene, self.page_position(0, Tag::Start(key)).unwrap().lower_right(), -0.5 * word_space);
-                    mark_seq(&mut scene, self.page_position(0, Tag::End(key)).unwrap().lower_left(), 0.5 * word_space);
+                    mark_seq(&mut scene, Tag::Start(key));
+                    mark_seq(&mut scene, Tag::End(key));
                 }
                 Some(Item::Object(_)) => {
                     let outline_style = scene.build_style(PathStyle {
@@ -542,7 +492,7 @@ impl Interactive for App {
                         fill_rule: FillRule::NonZero
                     });
         
-                    if let Some(rect) = dbg!(self.page_position(0, cursor.tag)) {
+                    if let Some(rect) = self.page_position(page_nr, cursor.tag) {
                         let mut pb = PathBuilder::new();
                         pb.rect(rect);
                         scene.draw_path(pb.into_outline(), &outline_style, None);
@@ -569,7 +519,7 @@ impl Interactive for App {
                     pos: ItemPos::Within(n)
                 });
             } else {
-                self.set_cursor_to(tag, ItemPos::After);
+                self.set_cursor_to(ctx, tag, ItemPos::After);
             }
         }
 
@@ -602,7 +552,7 @@ impl Interactive for App {
         }
         if let Some((tag, pos)) = s {
             info!("new tag: {:?}", tag);
-            self.set_cursor_to(tag, pos);
+            self.set_cursor_to(ctx, tag, pos);
             ctx.update_scene();
         }
     }
@@ -616,11 +566,11 @@ impl Interactive for App {
         };
         if let Some((tag, pos)) = s {
             self.layout();
-            self.set_cursor_to(tag, pos);
+            self.set_cursor_to(ctx, tag, pos);
             ctx.update_scene();
         }
     }
-    fn exit(&mut self, ctx: &mut Context) {
+    fn exit(&mut self, _ctx: &mut Context) {
         //self.store()
     }
 }
@@ -713,7 +663,7 @@ impl Interactive for NetworkApp {
             _ => {}
         }
     }
-    fn exit(&mut self, ctx: &mut Context) {
+    fn exit(&mut self, _ctx: &mut Context) {
         /*
         match self.state {
             NetworkState::Connected(ref mut app) => app.exit(),
@@ -751,10 +701,10 @@ impl Interactive for NetworkApp {
             }
         }
     }
-    fn init(&mut self, ctx: &mut Context) {
+    fn init(&mut self, _ctx: &mut Context) {
         self.conn.emit(ClientCommand::Join);
     }
-    fn idle(&mut self, ctx: &mut Context) {
+    fn idle(&mut self, _ctx: &mut Context) {
         match self.state {
             NetworkState::Connected(ref mut app) => {
                 for op in app.document.drain_pending() {

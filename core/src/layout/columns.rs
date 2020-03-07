@@ -432,6 +432,9 @@ impl Columns {
     pub fn len(&self) -> usize {
         self.columns.len()
     }
+    pub fn into_stream(self) -> StreamVec {
+        StreamVec(self.layout.para.items)
+    }
 }
 
 #[derive(Debug)]

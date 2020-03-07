@@ -42,7 +42,6 @@ enum Break {
 
 /// used as input to the line breaking algorithm
 #[derive(Debug)]
-#[allow(dead_code)]
 enum Entry {
     Item(ItemMeasure, RenderItem, Tag),
     
@@ -78,14 +77,25 @@ enum Entry {
 
 
 
-#[derive(Debug)]
+#[derive(Default, Debug)]
 pub struct StreamVec(Vec<Entry>);
 impl StreamVec {
     pub fn new() -> Self {
         StreamVec(vec![])
     }
+    pub fn clear(&mut self) {
+        self.0.clear();
+    }
     #[inline]
     fn push(&mut self, entry: Entry) {
         self.0.push(entry);
+    }
+    #[inline]
+    fn set(&mut self, idx: usize, entry: Entry) {
+        self.0[idx] = entry;
+    }
+    #[inline]
+    fn len(&self) -> usize {
+        self.0.len()
     }
 }

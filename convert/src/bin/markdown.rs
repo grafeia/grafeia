@@ -9,6 +9,7 @@ use grafeia_core::*;
 use grafeia_core::object::tex::TeX;
 use grafeia_convert::build::DICT_EN_GB;
 use std::mem::replace;
+use std::io::BufWriter;
 
 macro_rules! font {
     ($name:tt) => (
@@ -321,5 +322,5 @@ fn main() {
         design: Cow::Owned(design),
         root
     };
-    state.store(output).unwrap();
+    state.store(BufWriter::new(output)).unwrap();
 }

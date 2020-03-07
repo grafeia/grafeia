@@ -12,6 +12,7 @@ use pathfinder_geometry::{
 };
 use pathfinder_content::outline::Outline;
 use pathfinder_renderer::scene::Scene;
+use instant::Instant;
 
 #[inline]
 fn select<T>(cond: bool, a: T, b: T) -> T {
@@ -53,25 +54,13 @@ pub enum Marker {
     Start(SequenceId),
     End(SequenceId),
 }
+#[derive(Debug)]
 pub enum RenderedWord<R> {
     Full(R),
     // part before hyphenation, part after hyphenation, index at which the word was broken
     Before(R, u16),
     After(R, u16),
     Both(R, R, u16)
-}
-pub struct Pages {
-    pub columns: Columns,
-    pub map: TagMap,
-}
-impl Pages {
-    pub fn len(&self) -> usize {
-        self.columns.len()
-    }
-}
-pub struct TagMap {
-    pub positions: HashMap<Tag, (u32, RectF)>,
-    pub word_positions: HashMap<Tag, RenderedWord<(u32, RectF)>>,
 }
 
 pub struct Page {
@@ -114,7 +103,10 @@ pub enum WordPart {
 
 pub struct Cache {
     pub word_layout_cache: HashMap<(Font, WordId, WordPart), Layout>,
-    pub symbol_layout_cache: HashMap<(Font, SymbolId), Layout>
+    pub symbol_layout_cache: HashMap<(Font, SymbolId), Layout>,
+    pub columns: Option<Columns>,
+    pub positions: HashMap<Tag, (u32, RectF)>,
+    pub word_positions: HashMap<Tag, RenderedWord<(u32, RectF)>>,
 }
 impl Default for Cache {
     fn default() -> Self {
@@ -134,6 +126,9 @@ impl Cache {
         Cache {
             word_layout_cache: HashMap::new(),
             symbol_layout_cache: HashMap::new(),
+            columns: None,
+            positions: HashMap::new(),
+            word_positions: HashMap::new(),
         }
     }
 
@@ -171,12 +166,14 @@ impl Cache {
         let text = &word.text;
         if let Some(hyphen_id) = ctx.type_design.hyphen {
             let hyphen = ctx.storage.get_symbol(hyphen_id);
-            writer.branch(|gen| {
+            let options = dict.hyphenate(text);
+
+            writer.branch2(options.len() + 1, |gen| {
                 let part = WordPart::Full;
                 let measure = self.measure_word_part(ctx, tag, font, key, text, part);
                 gen.add(|writer| writer.item(space, space, measure, RenderItem::Word(key, part, font), tag));
 
-                dict.hyphenate(text, |index, before, after| {
+                options.for_each(|index, before, after| {
                     gen.add(|writer| {
                         let part = WordPart::Before(index as u16);
                         let measure = self.measure_word_part(ctx, tag, font, key, before, part);
@@ -287,8 +284,14 @@ impl Cache {
         }
     }
 
-    pub fn layout(&mut self, storage: &Storage, design: &Design, target: &Target, root: SequenceId) -> Pages {
-        let mut writer = Writer::new();
+    pub fn layout(&mut self, storage: &Storage, design: &Design, target: &Target, root: SequenceId) {
+        let t0 = Instant::now();
+
+        let mut stream = self.columns.take().map(|columns| columns.into_stream()).unwrap_or_default();
+        stream.clear();
+
+        let mut writer = Writer::with_stream(stream);
+
         let type_design = design.default();
         let ctx = DrawCtx {
             storage,
@@ -299,21 +302,33 @@ impl Cache {
             indent: type_design.indent
         };
         self.render_sequence(&mut writer, &ctx, root);
-
         let stream = writer.finish();
+
+        let t1 = Instant::now();
+
         let layout = ColumnLayout::new(stream, target.content_box.width, target.content_box.height);
-        let columns = layout.columns();
-        let map = self.build_locations(target, &columns);
-        Pages {
-            columns,
-            map
-        }
+        self.columns = Some(layout.columns());
+
+        let t2 = Instant::now();
+
+        self.build_locations(target);
+
+        let t3 = Instant::now();
+
+
+        info!("layout: linearized stream: {}ms", (t1 - t0).as_millis());
+        info!("layout: column layout: {}ms", (t2 - t1).as_millis());
+        info!("layout: location map: {}ms", (t3 - t2).as_millis());
     }
 
-    fn build_locations(&self, target: &Target, columns: &Columns) -> TagMap {
+    fn build_locations(&mut self, target: &Target) {
         let content_box: RectF = target.content_box.into();
-        let mut positions = HashMap::new();
-        let mut word_positions = HashMap::new();
+
+        let columns = self.columns.as_ref().unwrap();
+        let positions = &mut self.positions;
+        let word_positions = &mut self.word_positions;
+        positions.clear();
+        word_positions.clear();
 
         for (page_nr, column) in columns.columns().enumerate() {
             for (y, line) in column {
@@ -343,7 +358,7 @@ impl Cache {
                                         _ => panic!("invalid state")
                                     }
                                 },
-                                _ => panic!()
+                                p => panic!("{:?}", p),
                             }
                         }
                         RenderItem::Symbol(key, font) => {
@@ -359,14 +374,11 @@ impl Cache {
                 }
             }
         }
-
-        TagMap {
-            positions,
-            word_positions
-        }
     }
 
-    pub fn render_page(&mut self, storage: &Storage, target: &Target, design: &Design, column: Column) -> Page {
+    pub fn render_page(&mut self, storage: &Storage, target: &Target, design: &Design, column_nr: usize) -> Page {
+        let column = self.columns.as_ref().unwrap().get_column(column_nr);
+
         let mut scene = Scene::new();
         scene.set_bounds(target.media_box.into());
         scene.set_view_box(target.trim_box.into());
@@ -451,7 +463,7 @@ impl Cache {
         Page { scene, items: line_indices }
     }
 
-    pub fn get_position(&self, storage: &Storage, design: &Design, pages: &Pages, tag: Tag, byte_pos: usize) -> Option<(usize, Vector2F)> {
+    pub fn get_position(&self, storage: &Storage, design: &Design, tag: Tag, byte_pos: usize) -> Option<(usize, Vector2F)> {
         match storage.get_item(tag)? {
             Item::Word(key) => {
                 let seq = storage.get_weave(tag.seq());
@@ -459,7 +471,7 @@ impl Cache {
                 let word = storage.get_word(key);
                 let face = storage.get_font_face(type_design.font.font_face);
 
-                let (page_nr, off, rect, part) = match *pages.map.word_positions.get(&tag)? {
+                let (page_nr, off, rect, part) = match *self.word_positions.get(&tag)? {
                     RenderedWord::Full((n, rect)) => (n, 0, rect, WordPart::Full),
                     RenderedWord::Before((n, rect), idx) => (n, 0, rect, WordPart::Before(idx)),
                     RenderedWord::After((n, rect), idx) => (n, idx as usize, rect, WordPart::After(idx)),
@@ -494,12 +506,12 @@ impl Cache {
                 Some((page_nr as usize, rect.lower_left() + interpolate(last, (word.text.len(), layout.advance), byte_pos)))
             }
             Item::Symbol(_) => {
-                let &(page_nr, rect) = pages.map.positions.get(&tag)?;
+                let &(page_nr, rect) = self.positions.get(&tag)?;
                 Some((page_nr as usize, rect.lower_right()))
             }
             Item::Sequence(key) => {
                 storage.get_first(key)
-                    .and_then(|(first, _)| pages.map.positions.get(&first))
+                    .and_then(|(first, _)| self.positions.get(&first))
                     .map(|&(n, rect)| (n as usize, rect.lower_left()))
             }
             _ => None

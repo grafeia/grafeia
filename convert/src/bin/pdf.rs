@@ -334,7 +334,7 @@ fn main() {
     let layout = cache.layout(&state.storage, &state.design, &state.target, state.root);
 
     let mut pdf = Pdf::new();
-    for column in layout.columns() {
+    for column in layout.columns.columns() {
         pdf.render_page(&cache, &state.storage, &state.target, &state.design, column);
     }
     pdf.write_to(output);

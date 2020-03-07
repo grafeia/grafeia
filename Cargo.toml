@@ -5,7 +5,7 @@ members = [
     "app",
     "web",
     "server",
-    "convert"
+    "convert",
 ]
 
 [patch."https://github.com/s3bk/pathfinder_view"]

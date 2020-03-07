@@ -10,6 +10,7 @@ use std::error::Error;
 use itertools::Itertools;
 use unicode_categories::UnicodeCategories;
 use unicode_segmentation::UnicodeSegmentation;
+use instant::Instant;
 
 #[derive(Serialize, Deserialize)]
 #[derive(Hash, Eq, PartialEq, Copy, Clone, Default, PartialOrd, Ord, Debug)]
@@ -405,8 +406,11 @@ impl<'a> State<'a> {
 
         let version: u32 = bincode::deserialize_from(&mut reader)?;
         assert_eq!(version, Self::VERSION);
-
-        Ok(bincode::deserialize_from(reader)?)
+        
+        let t0 = Instant::now();
+        let state = bincode::deserialize_from(reader)?;
+        info!("loaded state in {}ms", t0.elapsed().as_millis());
+        Ok(state)
     }
 }
 
@@ -540,6 +544,8 @@ impl Document {
             Tag::End(_) => panic!("not a valid insert location")
         };
         info!("insert {:?} at {} into {:?}", new_item, prev_id, seq);
+        assert_ne!(Item::Sequence(seq), new_item);
+
         let weave = self.storage.weaves.get_mut(seq).unwrap();
 
         let atom = weave.create(self.site, prev_id, AtomOp::Add(new_item));
@@ -580,19 +586,28 @@ impl Document {
         let storage = &self.storage;
         GenIter::new(move || {
             let mut stack = vec![];
-            let traverse = move |key| (key, storage.weaves.get(parent).unwrap().items());
+            let traverse = move |key| {
+                let weave = storage.weaves.get(key).unwrap();
+                //debug!("atoms of {:?}: {:?}", key, weave.atoms);
+                (key, weave.items())
+            };
 
+            //debug!("children of {:?}", parent);
             let mut current = traverse(parent);
 
             loop {
                 while let Some((item_id, item)) = current.1.next() {
+                    assert!(stack.len() < 10);
                     if let Item::Sequence(child) = item {
+                        //debug!("entering {:?}", child);
+                        assert_ne!(current.0, child);
                         stack.push(std::mem::replace(&mut current, traverse(child)));
                         continue;
                     } else {
                         yield Tag::Item(current.0, item_id);
                     }
                 }
+                //debug!("leaving {:?}", current.0);
                 if let Some(parent_iter) = stack.pop() {
                     current = parent_iter;
                     continue;
@@ -711,7 +726,7 @@ impl Document {
         match parent.get_next(parent_item_id) {
             Some((_, Item::Sequence(child))) => return Some(Tag::Start(child)),
             Some((id, _)) => return Some(Tag::Item(parent_seq, id)),
-            None => return Some(Tag::Start(parent_seq))
+            None => return Some(Tag::End(parent_seq))
         }
     }
     pub fn get_parent_tag(&self, tag: Tag) -> Option<Tag> {

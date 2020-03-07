@@ -29,7 +29,7 @@ use pathfinder_content::outline::Outline;
 use serde::{Serialize, Deserialize, Serializer};
 use hyphenation::{
     Standard,
-    extended::Extended,
+    extended::{Extended, Subregion},
     Hyphenator
 };
 
@@ -106,29 +106,62 @@ pub enum Dictionary {
     Standard(Standard),
     Extended(Extended)
 }
-impl Dictionary {
-    pub fn hyphenate(&self, word: &str, mut f: impl FnMut(usize, &str, &str)) {
-        match *self {
-            Dictionary::Standard(ref dict) => {
-                for index in dict.hyphenate(word).breaks {
-                    let (left, right) = word.split_at(index);
+
+pub struct Options<'a> {
+    breaks: Breaks<'a>,
+    word: &'a str,
+}
+enum Breaks<'a> {
+    Standard(Vec<usize>),
+    Extended(Vec<(usize, Option<&'a Subregion>)>)
+}
+impl<'a> Options<'a> {
+    pub fn len(&self) -> usize {
+        match self.breaks {
+            Breaks::Standard(ref s) => s.len(),
+            Breaks::Extended(ref s) => s.len()
+        }
+    }
+    pub fn for_each(&self, mut f: impl FnMut(usize, &str, &str)) {
+        match self.breaks {
+            Breaks::Standard(ref breaks) => {
+                for &index in breaks.iter() {
+                    let (left, right) = self.word.split_at(index);
                     f(index, left, right);
                 }
             }
-            Dictionary::Extended(ref dict) => {
-                for (index, sub) in dict.hyphenate(word).breaks {
+            Breaks::Extended(ref breaks) => {
+                for &(index, sub) in breaks.iter() {
                     match sub {
                         None => {
-                            let (left, right) = word.split_at(index);
+                            let (left, right) = self.word.split_at(index);
                             f(index, left, right);
                         },
                         Some(ref subr) => {
                             let (tail, head) = subr.substitution.split_at(subr.breakpoint);
-                            let left = [&word[.. index - subr.left], tail].concat();
-                            let right = [head, &word[index + subr.right ..]].concat();
+                            let left = [&self.word[.. index - subr.left], tail].concat();
+                            let right = [head, &self.word[index + subr.right ..]].concat();
                             f(index, &left, &right);
                         }
                     }
+                }
+            }
+        }
+    }
+}
+impl Dictionary {
+    pub fn hyphenate<'a>(&'a self, word: &'a str) -> Options<'a> {
+        match *self {
+            Dictionary::Standard(ref dict) => {
+                Options {
+                    word,
+                    breaks: Breaks::Standard(dict.hyphenate(word).breaks)
+                }
+            }
+            Dictionary::Extended(ref dict) => {
+                Options {
+                    word,
+                    breaks: Breaks::Extended(dict.hyphenate(word).breaks)
                 }
             }
         }
