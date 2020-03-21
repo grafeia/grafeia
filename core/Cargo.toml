@@ -26,5 +26,5 @@ lazy_static = "1.4.0"
 itertools = "0.8.2"
 unicode_categories = "*"
 unicode-segmentation = "*"
-hyphenation = { path = "../../hyphenation" }
+hyphenation = { git = "https://github.com/s3bk/hyphenation" }
 instant = { version = "*", features = ["now"] }

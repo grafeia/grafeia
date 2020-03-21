@@ -485,16 +485,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "deflate"
-version = "0.8.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "050ef6de42a33903b30a7497b76b40d3d58691d4d3eec355348c122444a388f0"
-dependencies = [
- "adler32",
- "byteorder",
-]
-
-[[package]]
 name = "digest"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -625,6 +615,7 @@ checksum = "2fad85553e09a6f881f739c29f0b00b0f01357c743266d478b68951ce23285f3"
 [[package]]
 name = "font"
 version = "0.1.0"
+source = "git+https://github.com/pdf-rs/font#a8a7bf75fd87f3bc9886ae1e4a1a2322409868de"
 dependencies = [
  "brotli-decompressor",
  "decorum",
@@ -1760,6 +1751,7 @@ dependencies = [
 [[package]]
 name = "pathfinder_color"
 version = "0.1.0"
+source = "git+https://github.com/s3bk/pathfinder/#3107ad8648599504f7abe21ef413be98dac69cac"
 dependencies = [
  "pathfinder_simd",
 ]
@@ -1767,6 +1759,7 @@ dependencies = [
 [[package]]
 name = "pathfinder_content"
 version = "0.1.0"
+source = "git+https://github.com/s3bk/pathfinder/#3107ad8648599504f7abe21ef413be98dac69cac"
 dependencies = [
  "arrayvec 0.5.1",
  "bitflags",
@@ -1781,9 +1774,9 @@ dependencies = [
 [[package]]
 name = "pathfinder_export"
 version = "0.1.0"
-source = "git+https://github.com/s3bk/pathfinder/#53e56caf15e25e97f0f13b89f841fc5df29981fb"
+source = "git+https://github.com/s3bk/pathfinder/#3107ad8648599504f7abe21ef413be98dac69cac"
 dependencies = [
- "deflate 0.8.3",
+ "deflate",
  "pathfinder_color",
  "pathfinder_content",
  "pathfinder_geometry",
@@ -1793,6 +1786,7 @@ dependencies = [
 [[package]]
 name = "pathfinder_geometry"
 version = "0.4.0"
+source = "git+https://github.com/s3bk/pathfinder/#3107ad8648599504f7abe21ef413be98dac69cac"
 dependencies = [
  "pathfinder_simd",
 ]
@@ -1800,6 +1794,7 @@ dependencies = [
 [[package]]
 name = "pathfinder_gl"
 version = "0.1.0"
+source = "git+https://github.com/s3bk/pathfinder/#3107ad8648599504f7abe21ef413be98dac69cac"
 dependencies = [
  "gl",
  "half",
@@ -1813,6 +1808,7 @@ dependencies = [
 [[package]]
 name = "pathfinder_gpu"
 version = "0.1.0"
+source = "git+https://github.com/s3bk/pathfinder/#3107ad8648599504f7abe21ef413be98dac69cac"
 dependencies = [
  "bitflags",
  "half",
@@ -1826,6 +1822,7 @@ dependencies = [
 [[package]]
 name = "pathfinder_log"
 version = "0.1.0"
+source = "git+https://github.com/s3bk/pathfinder/#3107ad8648599504f7abe21ef413be98dac69cac"
 dependencies = [
  "log 0.4.8",
 ]
@@ -1833,6 +1830,7 @@ dependencies = [
 [[package]]
 name = "pathfinder_renderer"
 version = "0.1.0"
+source = "git+https://github.com/s3bk/pathfinder/#3107ad8648599504f7abe21ef413be98dac69cac"
 dependencies = [
  "bitflags",
  "byteorder",
@@ -1856,13 +1854,12 @@ dependencies = [
 [[package]]
 name = "pathfinder_resources"
 version = "0.1.0"
-dependencies = [
- "pathfinder_log",
-]
+source = "git+https://github.com/s3bk/pathfinder/#3107ad8648599504f7abe21ef413be98dac69cac"
 
 [[package]]
 name = "pathfinder_simd"
 version = "0.4.0"
+source = "git+https://github.com/s3bk/pathfinder/#3107ad8648599504f7abe21ef413be98dac69cac"
 dependencies = [
  "rustc_version",
 ]
@@ -1870,6 +1867,7 @@ dependencies = [
 [[package]]
 name = "pathfinder_svg"
 version = "0.1.0"
+source = "git+https://github.com/s3bk/pathfinder/#3107ad8648599504f7abe21ef413be98dac69cac"
 dependencies = [
  "bitflags",
  "hashbrown",
@@ -1883,6 +1881,7 @@ dependencies = [
 [[package]]
 name = "pathfinder_ui"
 version = "0.1.0"
+source = "git+https://github.com/s3bk/pathfinder/#3107ad8648599504f7abe21ef413be98dac69cac"
 dependencies = [
  "hashbrown",
  "pathfinder_color",
@@ -1898,13 +1897,14 @@ dependencies = [
 [[package]]
 name = "pathfinder_view"
 version = "0.1.0"
+source = "git+https://github.com/s3bk/pathfinder_view#7c55265edd1650a260b4fd3c00007569a12fed43"
 dependencies = [
  "bincode",
  "cfg-if",
  "gl",
  "glutin",
  "js-sys",
- "log 0.4.8",
+ "log 0.3.9",
  "pathfinder_color",
  "pathfinder_export",
  "pathfinder_geometry",
@@ -1921,6 +1921,7 @@ dependencies = [
 [[package]]
 name = "pathfinder_webgl"
 version = "0.1.0"
+source = "git+https://github.com/s3bk/pathfinder/#3107ad8648599504f7abe21ef413be98dac69cac"
 dependencies = [
  "image 0.21.3",
  "pathfinder_geometry",
@@ -2023,7 +2024,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "63daf481fdd0defa2d1d2be15c674fbfa1b0fd71882c303a91f9a79b3252c359"
 dependencies = [
  "bitflags",
- "deflate 0.7.20",
+ "deflate",
  "inflate",
  "num-iter",
 ]
@@ -2036,7 +2037,7 @@ checksum = "ef859a23054bbfee7811284275ae522f0434a3c8e7f4b74bd4a35ae7e1c4a283"
 dependencies = [
  "bitflags",
  "crc32fast",
- "deflate 0.7.20",
+ "deflate",
  "inflate",
 ]
 
@@ -2956,9 +2957,10 @@ checksum = "05c78687fb1a80548ae3250346c3db86a80a7cdd77bda190189f2d0a0987c81a"
 [[package]]
 name = "vector"
 version = "0.1.0"
+source = "git+https://github.com/s3bk/vector/#a148c68940541353a08dc1838421b5a29648a075"
 dependencies = [
  "itertools",
- "log 0.4.8",
+ "log 0.3.9",
  "pathfinder_color",
  "pathfinder_content",
  "pathfinder_geometry",
