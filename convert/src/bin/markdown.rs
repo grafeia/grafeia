@@ -60,6 +60,8 @@ fn main() {
     let coramont_italic = document.add_font(font!("Cormorant-Italic.ttf"));
     let didot = document.add_font(font!("GFSDidot.otf"));
     let cutive_mono = document.add_font(font!("CutiveMono-Regular.ttf"));
+    let latinmodern_math = document.add_font(font!("latinmodern-math.otf"));
+
     
     let hyphen = document.add_symbol(Symbol {
         text: "‐".into(),
@@ -270,7 +272,7 @@ fn main() {
                             match lang {
                                 CodeBlockKind::Fenced(s) => match s.as_ref() {
                                     "tex" | "TeX" | "latex" | "LaTeX" => {
-                                        let key = document.create_object(Object::TeX(TeX::display(code)));
+                                        let key = document.create_object(Object::TeX(TeX::display(code, latinmodern_math)));
                                         items.push(Item::Object(key));
                                     },
                                     _ => {}

@@ -17,6 +17,7 @@ pathfinder_renderer = { git = "https://github.com/s3bk/pathfinder/" }
 pathfinder_export = { git = "https://github.com/s3bk/pathfinder/" }
 pathfinder_svg = { git = "https://github.com/s3bk/pathfinder/" }
 vector = { git = "https://github.com/s3bk/vector/", features = ["impl_pathfinder"] }
+rex = { git = "https://github.com/grafeia/ReX" }
 serde = { version = "1.0", features = ["derive", "rc"] }
 log = "0.4.8"
 usvg = { version = "0.9", default-features = false }
@@ -27,5 +28,3 @@ unicode_categories = "*"
 unicode-segmentation = "*"
 hyphenation = { path = "../../hyphenation" }
 instant = { version = "*", features = ["now"] }
-
-rex = { path = "../../ReX" }

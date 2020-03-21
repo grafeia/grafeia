@@ -507,7 +507,6 @@ impl Interactive for App {
     fn mouse_input(&mut self, ctx: &mut Context, page: usize, pos: Vector2F, state: ElementState) {
         let old_cursor = self.cursor.take();
 
-        dbg!(pos, state);
         if let Some((tag, word_pos)) = self.pages[page].as_ref().unwrap().find(pos) {
             let offset = pos.x() - word_pos.x();
 

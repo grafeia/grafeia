@@ -6,12 +6,20 @@ use pathfinder_geometry::{
 };
 use pathfinder_renderer::scene::{Scene};
 use crate::*;
-use crate::draw::DrawCtx;
+use crate::object::DrawCtx;
 use std::fmt;
 
 
-pub use rex::layout::Style as TeXStyle;
-use rex::{Renderer, RenderSettings, Cursor, parser::color::RGBA, fp::F24P8, layout::Layout, constants::UNITS_PER_EM};
+pub use rex::layout::{
+    Style as TeXStyle,
+};
+use rex::{
+    Renderer, Cursor, parser::color::RGBA,
+    layout::{Layout, LayoutSettings},
+};
+use rex::render::SceneWrapper;
+use rex::font::FontContext;
+use rex::dimensions::{self, Px};
 use font::{OpenTypeFont, Font};
 use vector::{Surface, PathBuilder, PathStyle, Outline, FillRule, Paint};
 
@@ -19,6 +27,7 @@ use vector::{Surface, PathBuilder, PathStyle, Outline, FillRule, Paint};
 pub struct TeX {
     tex: String,
     style: TeXStyle,
+    font: FontId
 }
 impl fmt::Debug for TeX {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -30,134 +39,61 @@ lazy_static! {
         OpenTypeFont::parse(data!("rex-xits.otf"))
     };
 }
+fn cvt(v: dimensions::Length<Px>) -> Length {
+    Length::mm((v / Px) as f32)
+}
 impl TeX {
-    pub fn display(tex: impl Into<String>) -> Self {
-        TeX::new(tex, TeXStyle::Display)
+    pub fn display(tex: impl Into<String>, font: FontId) -> Self {
+        TeX::new(tex, TeXStyle::Display, font)
     }
-    pub fn text(tex: impl Into<String>) -> Self {
-        TeX::new(tex, TeXStyle::Text)
+    pub fn text(tex: impl Into<String>, font: FontId) -> Self {
+        TeX::new(tex, TeXStyle::Text, font)
     }
-    pub fn new(tex: impl Into<String>, style: TeXStyle) -> Self {
+    pub fn new(tex: impl Into<String>, style: TeXStyle, font: FontId) -> Self {
         TeX {
             tex: tex.into(),
-            style
+            style,
+            font
         }
     }
-    fn build(&self, typ: &TypeDesign) -> (Layout, RenderSettings) {
+    fn build<T>(&self, ctx: ObjectCtx, f: impl FnOnce(Layout, Renderer, &TypeDesign) -> T) -> T {
+        let type_design = ctx.design.get_type_or_default(ctx.typ);
         let mut parse = rex::parser::parse(&self.tex).expect("invalid tex");
-        let settings = RenderSettings::default()
-            .font_size(typ.font.size.value as f64)
-            .horz_padding(0.into())
-            .style(self.style);
-
-        let layout = rex::layout::engine::layout(&mut parse, settings.layout_settings());
-        (layout, settings)
+        let font = ctx.storage.get_font_face(self.font);
+        let font = font.downcast().expect("not a OpenType font");
+        let font_ctx = FontContext::new(font);
+        let renderer = Renderer::new();
+        let layout_settings = LayoutSettings::new(&font_ctx, type_design.font.size.value as f64, self.style);
+        let layout = renderer.layout(&self.tex, layout_settings).unwrap();
+        f(layout, renderer, type_design)
     }
-    pub fn size(&self, ctx: &DrawCtx) -> (FlexMeasure, Length) {
-        let (layout, settings) = self.build(&ctx.type_design);
-        let cvt = |size| Length::mm((settings.font_size * f64::from(size) / f64::from(UNITS_PER_EM)) as f32);
+    pub fn size(&self, ctx: ObjectCtx) -> (FlexMeasure, Length) {
+        self.build(ctx, |layout, renderer, type_design| {
+            let (x0, y0, x1, y1) = renderer.size(&layout);
+            // Left and right padding
+            let width = layout.width;
+            // Top and bot padding
+            let height = match self.style {
+                TeXStyle::Display | TeXStyle::DisplayCramped => cvt(layout.height - layout.depth),
+                _ => type_design.line_height
+            };
 
-        // Left and right padding
-        let width = layout.width + 2 * settings.horz_padding;
-        // Top and bot padding
-        let height = match self.style {
-            TeXStyle::Display | TeXStyle::DisplayCramped => cvt(layout.height - layout.depth + 2 * settings.vert_padding),
-            _ => ctx.type_design.line_height
-        };
-
-        (FlexMeasure::fixed(cvt(width)), height)
+            (FlexMeasure::fixed(cvt(width)), height)
+        })
     }
-    pub fn draw(&self, typ: &TypeDesign, origin: Vector2F, size: Vector2F, surface: &mut Scene) {
-        let (layout, settings) = self.build(typ);
-        let layout_width = layout.width + 2 * settings.horz_padding;
-        let layout_height = layout.height - layout.depth + 2 * settings.vert_padding;
-        let y_off = match self.style {
-            TeXStyle::Display | TeXStyle::DisplayCramped => layout_height,
-            _ => layout.height + settings.vert_padding
-        };
+    pub fn draw(&self, ctx: ObjectCtx, origin: Vector2F, size: Vector2F, surface: &mut Scene) {
+        self.build(ctx, |layout, renderer, type_design| {
+            let layout_width = layout.width / Px;
+            let y_off = match self.style {
+                TeXStyle::Display | TeXStyle::DisplayCramped => layout.depth / Px,
+                _ => 0.0
+            };
 
-        let scale = settings.font_size / f64::from(UNITS_PER_EM);
-        let transform = Transform2F::from_translation(origin + Vector2F::new(size.x(), 0.0))
-            * Transform2F::from_scale(Vector2F::splat(scale as f32))
-            * Transform2F::from_translation(Vector2F::new(layout_width.bits as f32, y_off.bits as f32).scale(-1.0 / 256.));
-        
-        let renderer = TexRenderer {
-            settings: &settings,
-            style: surface.build_style(PathStyle {
-                fill: Some(Paint::black()),
-                stroke: None, fill_rule:
-                FillRule::NonZero
-            }),
-            bbox_style: surface.build_style(PathStyle {
-                fill: Some(Paint::Solid((200, 0, 0, 200))),
-                stroke: None, fill_rule:
-                FillRule::NonZero
-            }),
-            transform,
-            font: &*XITS
-        };
-        renderer.render_layout_to(surface, &layout);
-    }
-}
-struct TexRenderer<'a, S: Surface> {
-    settings: &'a RenderSettings,
-    style: S::Style,
-    bbox_style: S::Style,
-    transform: Transform2F,
-    font: &'a OpenTypeFont<S::Outline>,
-}
-fn cursor2vec(Cursor { x, y }: Cursor) -> Vector2F {
-    Vector2F::new(x.bits as f32, y.bits as f32).scale(1.0 / 256.)
-}
-fn rect2rect(cursor: Cursor, width: F24P8, height: F24P8) -> RectF {
-    let origin = Vector2F::new(cursor.x.bits as f32, cursor.y.bits as f32);
-    let size = Vector2F::new(width.bits as f32, height.bits as f32);
-    RectF::new(origin, size).scale(1.0 / 256.)
-}
-impl<'a, S: Surface> Renderer for TexRenderer<'a, S> {
-    type Out = S;
-    fn symbol(&self, out: &mut Self::Out, pos: Cursor, symbol: u32, scale: f64) {
-        let gid = self.font.gid_for_unicode_codepoint(symbol).unwrap();
-        let glyph = self.font.glyph(gid).unwrap();
-        let tr = self.transform
-            * Transform2F::from_translation(cursor2vec(pos))
-            * Transform2F::from_scale(Vector2F::new(1.0, -1.0).scale(scale as f32));
-        
-        out.draw_path(glyph.path.transform(tr), &self.style, None);
-    }
-
-    fn bbox(&self, out: &mut Self::Out, pos: Cursor, width: F24P8, height: F24P8, _color: &str) {
-        let rect = rect2rect(pos, width, height);
-
-        let mut pb: PathBuilder<S::Outline> = PathBuilder::new();
-        pb.rect(rect);
-        
-        let tr = self.transform;
-        out.draw_path(pb.into_outline().transform(tr), &self.bbox_style, None);
-    }
-
-    fn rule(&self, out: &mut Self::Out, pos: Cursor, width: F24P8, height: F24P8) {
-        let rect = rect2rect(pos, width, height);
-        let mut pb: PathBuilder<S::Outline> = PathBuilder::new();
-        pb.rect(rect);
-        
-        let tr = self.transform;
-        out.draw_path(pb.into_outline().transform(tr), &self.style, None);
-    }
-
-    fn color<F>(&self, out: &mut Self::Out, color: RGBA, mut contents: F)
-        where F: FnMut(&Self, &mut Self::Out)
-    {
-        let RGBA(r, g, b, a) = color;
-        let style = out.build_style(PathStyle { fill: Some(Paint::Solid((r, g, b, a))), stroke: None, fill_rule: FillRule::NonZero });
-
-        contents(&TexRenderer {
-            style,
-            bbox_style: self.bbox_style.clone(),
-            .. *self
-        }, out);
-    }
-    fn settings(&self) -> &RenderSettings {
-        self.settings
+            dbg!(origin, size, layout.height, layout.depth);
+            let transform = Transform2F::from_translation(origin + Vector2F::new(0.0, y_off as f32));
+            
+            let mut backend = SceneWrapper::with_transform(surface, transform);
+            renderer.render(&layout, &mut backend);
+        })
     }
 }

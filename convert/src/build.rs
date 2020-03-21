@@ -47,6 +47,14 @@ pub fn build() -> State<'static> {
     let storage = Storage::new();
     let mut document = Document::new(storage);
     symbols(&mut document);
+    info!("reading font");
+    let font_face = document.add_font(
+        &include_bytes!("../../data/Cormorant-Regular.ttf")[..]
+    );
+    let math_font = document.add_font(
+        &include_bytes!("../../data/latinmodern-math.otf")[..]
+    );
+
     let mut document = ContentBuilder::with_document(document)
         .chapter().word("Test").finish()
         .paragraph()
@@ -63,23 +71,19 @@ pub fn build() -> State<'static> {
             .finish()
         .paragraph()
             .text("Using ReX to render")
-            .object(Object::TeX(TeX::text(r#"T_e X"#)))
+            .object(Object::TeX(TeX::text(r#"T_e X"#, math_font)))
             .finish()
         .paragraph()
             .text("A inline equation")
-            .object(Object::TeX(TeX::text(r#"\phi = \frac{1 + \sqrt{5}}{2}"#)))
+            .object(Object::TeX(TeX::text(r#"\phi = \frac{1 + \sqrt{5}}{2}"#, math_font)))
             .finish()
         .paragraph()
             .text("And more text to collide with the previous equation.")
             .finish()
-        .object(Object::TeX(TeX::display(r#"\frac{1}{\left(\sqrt{\phi\sqrt5} - \phi\right) e^{\frac{2}{5}\pi}} = 1 + \frac{e^{-2\pi}}{1 + \frac{e^{-4\pi}}{1 + \frac{e^{-6\pi}}{1 + \frac{e^{-8\pi}}{1 + \unicodecdots}}}}"#)))
+        .object(Object::TeX(TeX::display(r#"\frac{1}{\left(\sqrt{\phi\sqrt5} - \phi\right) e^{\frac{2}{5}\pi}} = 1 + \frac{e^{-2\pi}}{1 + \frac{e^{-4\pi}}{1 + \frac{e^{-6\pi}}{1 + \frac{e^{-8\pi}}{1 + \unicodecdots}}}}"#, math_font)))
         .object(Object::Svg(SvgObject::new(Scale::FitWidth, include_bytes!("../../data/Ghostscript_Tiger.svg")[..].into())))
         .finish();
 
-    info!("reading font");
-    let font_face = document.add_font(
-        &include_bytes!("../../data/Cormorant-Regular.ttf")[..]
-    );
 
     info!("done reading font");
 

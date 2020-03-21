@@ -232,6 +232,13 @@ impl Cache {
             Item::Symbol(key) => self.render_symbol(writer, ctx, tag, key),
             Item::Object(key) => {
                 let obj = ctx.storage.get_object(key);
+                let ctx = ObjectCtx {
+                    storage: ctx.storage,
+                    target: ctx.target,
+                    design: ctx.design,
+                    typ: ctx.storage.get_weave(tag.seq()).typ()
+                };
+
                 let (width, height) = obj.size(ctx);
                 let measure = ItemMeasure {
                     left: FlexMeasure::zero(),
@@ -444,18 +451,21 @@ impl Cache {
                         let font = storage.get_font_face(font.font_face);
                         let outline = layout.render(font, Transform2F::from_translation(p));
                         scene.draw_path(outline, &glyph_style, None);
-                        line_items.push((p.x(), tag));
                         positions.insert(tag, rect);
                     }
                     RenderItem::Object(key) => {
-                        let typ_design = design.get_type_or_default(storage.get_weave(tag.seq()).typ());
-                        storage.get_object(key).draw(typ_design, p, size.into(), &mut scene);
-                        line_items.push((p.x(), tag));
+                        let ctx = ObjectCtx {
+                            storage,
+                            target,
+                            design,
+                            typ: storage.get_weave(tag.seq()).typ()
+                        };
+                        storage.get_object(key).draw(ctx, p, size.into(), &mut scene);
                     }
                     RenderItem::Empty => {
-                        line_items.push((p.x(), tag));
                     }
                 };
+                line_items.push((p.x(), tag));
             }
             line_indices.push((y.value + content_box.origin().y(), line_items));
         }

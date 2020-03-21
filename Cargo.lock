@@ -645,14 +645,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "font_types"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_derive",
-]
-
-[[package]]
 name = "foreign-types"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -666,15 +658,6 @@ name = "foreign-types-shared"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "00b0228411908ca8685dba7fc2cdd70ec9990a6e753e89b6ac91a84c40fbaf4b"
-
-[[package]]
-name = "fp"
-version = "0.1.0"
-source = "git+https://github.com/ReTeX/fp.git#46ea0578d8032b1671f3684c72816be8412934df"
-dependencies = [
- "serde",
- "serde_derive",
-]
 
 [[package]]
 name = "fuchsia-cprng"
@@ -1292,6 +1275,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6c346c299e3fe8ef94dc10c2c0253d858a69aac1245157a3bf4125915d528caf"
 dependencies = [
  "time",
+ "web-sys",
 ]
 
 [[package]]
@@ -1853,6 +1837,7 @@ dependencies = [
  "bitflags",
  "byteorder",
  "hashbrown",
+ "instant",
  "pathfinder_color",
  "pathfinder_content",
  "pathfinder_geometry",
@@ -1871,6 +1856,9 @@ dependencies = [
 [[package]]
 name = "pathfinder_resources"
 version = "0.1.0"
+dependencies = [
+ "pathfinder_log",
+]
 
 [[package]]
 name = "pathfinder_simd"
@@ -2385,14 +2373,20 @@ dependencies = [
 [[package]]
 name = "rex"
 version = "0.1.1"
+source = "git+https://github.com/grafeia/ReX#f3c173bf6f1c67690189c7b9e32cae97ca9e3a03"
 dependencies = [
- "font_types",
+ "font",
  "log 0.4.8",
+ "pathfinder_content",
+ "pathfinder_export",
+ "pathfinder_geometry",
+ "pathfinder_renderer",
  "serde",
  "serde_derive",
  "static_map",
  "static_map_macros",
- "stix2",
+ "unicode-math",
+ "vector",
 ]
 
 [[package]]
@@ -2638,16 +2632,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "stix2"
-version = "0.1.0"
-dependencies = [
- "font_types",
- "fp",
- "static_map",
- "static_map_macros",
-]
-
-[[package]]
 name = "svgtypes"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2866,6 +2850,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "49f2bd0c6468a8230e1db229cff8029217cf623c767ea5d60bfbd42729ea54d5"
 dependencies = [
  "matches",
+]
+
+[[package]]
+name = "unicode-math"
+version = "0.1.0"
+source = "git+https://github.com/s3bk/unicode-math/#c13b3cbdd09fb62d656c6f323e0c2ea4e181f4e7"
+dependencies = [
+ "regex",
 ]
 
 [[package]]

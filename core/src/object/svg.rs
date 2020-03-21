@@ -6,7 +6,7 @@ use pathfinder_geometry::{
 };
 use pathfinder_renderer::scene::{Scene, DrawPath};
 use crate::*;
-use crate::draw::DrawCtx;
+use crate::object::DrawCtx;
 use std::hash::{Hash, Hasher};
 use std::fmt;
 use vector::Outline;
@@ -65,12 +65,13 @@ impl Serialize for SvgObject {
     }
 }
 impl SvgObject {
-    pub fn size(&self, ctx: &DrawCtx) -> (FlexMeasure, Length) {
+    pub fn size(&self, ctx: ObjectCtx) -> (FlexMeasure, Length) {
+        let type_design = ctx.design.get_type_or_default(ctx.typ);
         let svg_size = self.scene.view_box().size();
         let (w, h) = match self.scale {
             Scale::FitWidth => (Some(ctx.target.content_box.width), None),
-            Scale::FitLineHight => (None, Some(ctx.type_design.line_height)),
-            Scale::FitTextHeight => (None, Some(ctx.type_design.font.size)),
+            Scale::FitLineHight => (None, Some(type_design.line_height)),
+            Scale::FitTextHeight => (None, Some(type_design.font.size)),
             Scale::Width(w) => (Some(w), None),
             Scale::Height(h) => (None, Some(h))
         };
@@ -82,7 +83,7 @@ impl SvgObject {
         (FlexMeasure::fixed(w), h)
     }
 
-    pub fn draw(&self, _typ: &TypeDesign, origin: Vector2F, size: Vector2F, scene: &mut Scene) {
+    pub fn draw(&self, _: ObjectCtx, origin: Vector2F, size: Vector2F, scene: &mut Scene) {
         // coorinates are at the lower left, but objects expect the origin at the top left
         let view_box = self.scene.view_box();
         let svg_size = view_box.size();

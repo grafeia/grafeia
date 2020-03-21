@@ -15,7 +15,7 @@ fn main() {
     let state = State::load(input).unwrap();
     let mut cache = Cache::new();
 
-    for i in 0 .. 100 {
+    for i in 0 .. 1 {
         black_box(cache.layout(&state.storage, &state.design, &state.target, state.root));
     }
 }

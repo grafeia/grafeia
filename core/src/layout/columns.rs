@@ -253,6 +253,7 @@ impl ParagraphLayout {
 impl ColumnLayout {
     pub fn new(items: StreamVec, width: Length, height: Length) -> ColumnLayout {
         let limit = items.0.len();
+        debug!("{} items", limit);
         let mut nodes = vec![None; limit+1];
         let mut nodes_col = vec![None; limit+1];
 

@@ -25,17 +25,24 @@ pub enum Scale {
     Height(Length)
 }
 
+pub struct ObjectCtx<'a> {
+    pub storage: &'a Storage,
+    pub target: &'a Target,
+    pub design: &'a Design,
+    pub typ: TypeId,
+}
+
 impl Object {
-    pub fn size(&self, ctx: &DrawCtx) -> (FlexMeasure, Length) {
+    pub fn size(&self, ctx: ObjectCtx) -> (FlexMeasure, Length) {
         match *self {
             Object::Svg(ref svg) => svg.size(ctx),
             Object::TeX(ref tex) => tex.size(ctx),
         }
     }
-    pub fn draw(&self, typ: &TypeDesign, origin: Vector2F, size: Vector2F, scene: &mut Scene) {
+    pub fn draw(&self, ctx: ObjectCtx, origin: Vector2F, size: Vector2F, scene: &mut Scene) {
         match *self {
-            Object::Svg(ref svg) => svg.draw(typ, origin, size, scene),
-            Object::TeX(ref tex) => tex.draw(typ, origin, size, scene),
+            Object::Svg(ref svg) => svg.draw(ctx, origin, size, scene),
+            Object::TeX(ref tex) => tex.draw(ctx, origin, size, scene),
         }
     }
 }
