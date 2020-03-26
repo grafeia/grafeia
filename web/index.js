@@ -115,7 +115,9 @@ async function init_view(socket) {
         let dt = t1 - t0;
         console.log(`${dt}ms (${1000 / dt}fps)`);
 
-        request_animation_frame();
+        if (spin_fan) {
+            request_animation_frame();
+        }
     }
 
     function request_animation_frame() {

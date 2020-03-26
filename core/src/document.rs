@@ -331,9 +331,9 @@ impl Storage {
 
         for atom in weave.atoms.iter() {
             match atom.op {
-                AtomOp::Remove => info!("{} Remove {}", atom.id, atom.prev),
-                AtomOp::Replace(id) => info!("{} Replace({}) {}", atom.id, item(id), atom.prev),
-                AtomOp::Add(id) => info!("{} Add({}) {}", atom.id, item(id), atom.prev),
+                AtomOp::Remove => debug!("{} Remove {}", atom.id, atom.prev),
+                AtomOp::Replace(id) => debug!("{} Replace({}) {}", atom.id, item(id), atom.prev),
+                AtomOp::Add(id) => debug!("{} Add({}) {}", atom.id, item(id), atom.prev),
             }
         }
     }
@@ -532,7 +532,7 @@ impl Document {
         let atom = weave.create(self.site, id, AtomOp::Remove);
         weave.add(atom);
 
-        info!("remove {} from {:?}", id, seq);
+        debug!("remove {} from {:?}", id, seq);
         self.storage.log_weave(seq);
         self.pending.push(DocumentOp::SeqOp(seq, atom));
     }
@@ -543,7 +543,7 @@ impl Document {
             Tag::Item(seq, item) => (seq, item),
             Tag::End(_) => panic!("not a valid insert location")
         };
-        info!("insert {:?} at {} into {:?}", new_item, prev_id, seq);
+        debug!("insert {:?} at {} into {:?}", new_item, prev_id, seq);
         assert_ne!(Item::Sequence(seq), new_item);
 
         let weave = self.storage.weaves.get_mut(seq).unwrap();

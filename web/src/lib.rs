@@ -1,4 +1,4 @@
-use grafeia_app::app::{App, NetworkApp};
+use grafeia_app::{app::App, net::NetworkApp};
 use grafeia_core::{State, SiteId};
 use wasm_bindgen::prelude::*;
 use web_sys::HtmlCanvasElement;

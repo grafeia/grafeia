@@ -1,5 +1,5 @@
 use grafeia_core::*;
-use docx::{Docx, document::{Para, Text, TextSpace}};
+use docx::{Docx, document::{Paragraph, Text, TextSpace, Run}};
 use std::io::Cursor;
 
 struct DocxWriter<'a> {
@@ -17,17 +17,17 @@ impl<'a> DocxWriter<'a> {
         if self.run.len() == 0 {
             return;
         }
-        let mut para = Para::default();
+        let mut para = Paragraph::default();
         for text in self.run.drain(..) {
-            para.text(text);
+            para.content.push(Run::default().push_text(text).into());
         }
-        self.docx.insert_para(para);
+        self.docx.document.body.push(para);
     }
     fn word(&mut self, word: &'a str) {
         if self.run.len() > 0 {
-            self.run.push(Text::new(" ", Some(TextSpace::Preserve)));
+            self.run.push(Text::from((" ", TextSpace::Preserve)));
         }
-        self.run.push(Text::new(word, Some(TextSpace::Preserve)));
+        self.run.push(Text::from((word, TextSpace::Preserve)));
     }
     fn finish(mut self) -> Vec<u8> {
         let mut data = Vec::new();

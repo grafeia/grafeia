@@ -1,11 +1,12 @@
 [workspace]
 members = [
     "core",
-    "gui",
     "app",
     "web",
     "server",
     "convert",
+    "rex",
+    "tex",
 ]
 
 #[patch."https://github.com/s3bk/pathfinder_view"]

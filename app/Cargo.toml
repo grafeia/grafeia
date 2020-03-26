@@ -29,3 +29,7 @@ wasm-bindgen = { version = "*" }
 serde_json = "*"
 base64  = "*"
 js-sys = "*"
+
+[target.'cfg(not(target_arch="wasm32"))'.dependencies]
+websocket = "*"
+env_logger = "*"

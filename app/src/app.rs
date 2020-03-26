@@ -13,9 +13,6 @@ use unicode_segmentation::UnicodeSegmentation;
 use unicode_categories::UnicodeCategories;
 use std::borrow::Cow;
 
-#[cfg(target_arch = "wasm32")]
-use wasm_bindgen::prelude::*;
-
 pub struct App {
     target: Target,
     document: Document,
@@ -43,10 +40,8 @@ impl App {
             target,
             design
         };
-        info!("creating layout");
         app.layout();
 
-        info!("ready");
         app
     }
 
@@ -365,11 +360,14 @@ impl App {
         }
     }
 
-    fn op(&mut self, op: DocumentOp) {
+    pub fn op(&mut self, op: DocumentOp) {
         self.document.exec_op(op);
         self.layout();
     }
 
+    pub fn pending<'s>(&'s mut self) -> impl Iterator<Item=DocumentOp> + 's {
+        self.document.drain_pending()
+    }
 }
 
 enum TextOp {
@@ -550,7 +548,6 @@ impl Interactive for App {
             self.layout();
         }
         if let Some((tag, pos)) = s {
-            info!("new tag: {:?}", tag);
             self.set_cursor_to(ctx, tag, pos);
             ctx.update_scene();
         }
@@ -571,146 +568,5 @@ impl Interactive for App {
     }
     fn exit(&mut self, _ctx: &mut Context) {
         //self.store()
-    }
-}
-
-enum NetworkState {
-    Connecting {
-        site: Option<SiteId>,
-    },
-    Connected(App)
-}
-struct Connection {
-
-}
-pub struct NetworkApp {
-    state: NetworkState,
-    conn: Connection
-}
-impl NetworkApp {
-    pub fn new() -> Self {
-        NetworkApp {
-            state: NetworkState::Connecting { site: None },
-            conn: Connection {}
-        }
-    }
-}
-impl Connection {
-    fn emit(&self, event: ClientCommand) {
-        let data = bincode::serialize(&event).unwrap();
-        self.platform_send(data);
-    }
-    #[cfg(target_arch = "wasm32")]
-    fn platform_send(&self, data: Vec<u8>) {
-        #[wasm_bindgen]
-        extern {
-            fn ws_send(data: &[u8]);
-        }
-        ws_send(&data);
-    }
-    #[cfg(not(target_arch = "wasm32"))]
-    fn platform_send(&self, _data: Vec<u8>) {
-    }
-
-}
-impl Interactive for NetworkApp {
-    fn title(&self) -> String {
-        "γραφείο".into()
-    }
-    fn scene(&mut self, nr: usize) -> Scene {
-        match self.state {
-            NetworkState::Connected(ref mut app) => app.scene(nr),
-            _ => {
-                let mut scene = Scene::new();
-                let style = scene.build_style(PathStyle {
-                    fill: None,
-                    stroke: Some((Paint::Solid((0,0,200,255)), 10.)),
-                    fill_rule: FillRule::NonZero
-                });
-                let mut pb = PathBuilder::new();
-                pb.move_to(Vector2F::new(0.0, 100.0));
-                pb.line_to(Vector2F::new(0.0, 0.0));
-                pb.line_to(Vector2F::new(50.0, 0.0));
-                scene.draw_path(pb.into_outline(), &style, None);
-                scene
-            }
-        }
-    }
-    fn num_pages(&self) -> usize {
-        match self.state {
-            NetworkState::Connected(ref app) => app.num_pages(),
-            _ => 1
-        }
-    }
-    fn mouse_input(&mut self, ctx: &mut Context, page: usize, pos: Vector2F, state: ElementState) {
-        match self.state {
-            NetworkState::Connected(ref mut app) => app.mouse_input(ctx, page, pos, state),
-            _ => {}
-        }
-    }
-
-    fn keyboard_input(&mut self, ctx: &mut Context, event: &mut KeyEvent) {
-        match self.state {
-            NetworkState::Connected(ref mut app) => app.keyboard_input(ctx, event),
-            _ => {}
-        }
-    }
-
-    fn char_input(&mut self, ctx: &mut Context, c: char) {
-        match self.state {
-            NetworkState::Connected(ref mut app) => app.char_input(ctx, c),
-            _ => {}
-        }
-    }
-    fn exit(&mut self, _ctx: &mut Context) {
-        /*
-        match self.state {
-            NetworkState::Connected(ref mut app) => app.exit(),
-            _ => {}
-        }
-        */
-    }
-    fn event(&mut self, ctx: &mut Context, data: Vec<u8>) {
-        let event = ServerCommand::<'static>::decode(&data).unwrap();
-        match event {
-            ServerCommand::Welcome(site) => info!("-> Welcome({:?})", site),
-            ServerCommand::Document(_) => info!("-> Document"),
-            ServerCommand::Op(ref op) => info!("-> Op({:?})", op),
-        }
-
-        match self.state {
-            NetworkState::Connected(ref mut app) => match event {
-                ServerCommand::Op(op) => {
-                    app.op(op.into_owned());
-                    ctx.update_scene();
-                }
-                _ => {}
-            },
-            NetworkState::Connecting { ref mut site } => match event {
-                ServerCommand::Welcome(id) => {
-                    *site = Some(id);
-                    self.conn.emit(ClientCommand::GetAll);
-                }
-                ServerCommand::Document(state) => {
-                    let site = site.expect("got Document before SiteId");
-                    self.state = NetworkState::Connected(App::from_state(state, site));
-                    ctx.update_scene();
-                }
-                _ => {}
-            }
-        }
-    }
-    fn init(&mut self, _ctx: &mut Context) {
-        self.conn.emit(ClientCommand::Join);
-    }
-    fn idle(&mut self, _ctx: &mut Context) {
-        match self.state {
-            NetworkState::Connected(ref mut app) => {
-                for op in app.document.drain_pending() {
-                    self.conn.emit(ClientCommand::Op(op));
-                }
-            },
-            _ => {}
-        }
     }
 }
